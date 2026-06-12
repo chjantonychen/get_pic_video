@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
         self.data_panel.btn_new_rule.clicked.connect(self._start_new_rule)
         self.browser_panel.btn_pick.clicked.connect(self._toggle_pick_mode)
         self.bottom_bar.downloadRequested.connect(self._start_download)
+        self.bottom_bar.autoDownloadRequested.connect(self._start_auto_download)
         self.browser_panel.webview.page().titleChanged.connect(self._on_page_title_changed)
         self.browser_panel.navigate("about:blank")
 
@@ -318,6 +319,154 @@ class MainWindow(QMainWindow):
         else:
             self.bottom_bar.log_message("没有待下载的媒体文件，请先双击详情页分析")
 
+    def _start_auto_download(self):
+        pages = []
+        for i in range(self.data_panel.page_list.count()):
+            item = self.data_panel.page_list.item(i)
+            url = item.data(256)
+            if url:
+                pages.append(url)
+        if not pages:
+            self.bottom_bar.log_message("分页列表为空，请先分析")
+            return
+        self._auto_queue = []
+        self._auto_index = 0
+        self._auto_total = 0
+        self._auto_save_base = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
+        self.bottom_bar.log_message(f"自动下载: 处理 {len(pages)} 个分页...")
+        self._auto_process_next_page()
+
+    def _auto_process_next_page(self):
+        if self._auto_index >= self.data_panel.page_list.count():
+            self.bottom_bar.log_message("自动下载完成!")
+            self.bottom_bar.update_progress(0, 1)
+            return
+        item = self.data_panel.page_list.item(self._auto_index)
+        url = item.data(256)
+        if not url:
+            self._auto_index += 1
+            self._auto_process_next_page()
+            return
+        self._auto_current_page_url = url
+        self.bottom_bar.log_message(f"处理分页 [{self._auto_index + 1}]: {url[:60]}")
+        self.browser_panel.webview.page().loadFinished.connect(self._auto_on_page_loaded)
+        self.browser_panel.navigate(url)
+
+    def _auto_on_page_loaded(self, ok):
+        try:
+            self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_page_loaded)
+        except TypeError:
+            pass
+        if not ok:
+            self._auto_index += 1
+            self.bottom_bar.log_message("页面加载失败，跳过")
+            self._auto_process_next_page()
+            return
+        # Extract detail links from this pagination page
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(3000, self._auto_extract_details)
+
+    def _auto_extract_details(self):
+        if not self._current_rule:
+            self._auto_index += 1
+            self._auto_process_next_page()
+            return
+        from app.models import SelectorRule, SiteRule
+        r = self._current_rule
+        rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern",""),
+                        page_list=SelectorRule(css=r["page_list"]["css"], attribute=r["page_list"]["attribute"],
+                                              url_pattern=r["page_list"].get("url_pattern","")),
+                        detail_images=SelectorRule(css=r["detail_images"]["css"], attribute=r["detail_images"]["attribute"]),
+                        pagination=None)
+        self._crawler.extract_detail_links(rule)
+        # After links are found, process them
+
+    def _on_detail_links_found(self, links):
+        for link in links:
+            url = self._resolve_url(link.get("url") or "")
+            text = link.get("text") or url
+            if url:
+                self.data_panel.add_detail_item(text, url)
+                if hasattr(self, '_auto_queue'):
+                    self._auto_queue.append(url)
+        self.bottom_bar.log_message(f"找到 {sum(1 for l in links if l.get('url'))} 个详情链接")
+        if hasattr(self, '_auto_index') and self._auto_queue:
+            self._auto_process_details()
+
+    def _auto_process_details(self):
+        self._auto_detail_index = 0
+        self._auto_detail_queue = list(self._auto_queue)  # Snapshot current queue
+        self._auto_queue = []  # Reset for next page
+        self._auto_total = len(self._auto_detail_queue)
+        self.bottom_bar.log_message(f"开始处理 {self._auto_total} 个详情页...")
+        self.bottom_bar.update_progress(0, self._auto_total)
+        self._auto_process_next_detail()
+
+    def _auto_process_next_detail(self):
+        if self._auto_detail_index >= len(self._auto_detail_queue):
+            self._auto_detail_queue = []
+            self._auto_index += 1
+            self._auto_process_next_page()
+            return
+        url = self._auto_detail_queue[self._auto_detail_index]
+        self._auto_current_detail_url = url
+        self.bottom_bar.log_message(f"详情 [{self._auto_detail_index + 1}/{self._auto_total}]")
+        self.browser_panel.webview.page().loadFinished.connect(self._auto_on_detail_loaded)
+        self.browser_panel.navigate(url)
+
+    def _auto_on_detail_loaded(self, ok):
+        try:
+            self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_detail_loaded)
+        except TypeError:
+            pass
+        if not ok:
+            self._auto_detail_index += 1
+            self.bottom_bar.log_message("详情页加载失败，跳过")
+            self._auto_process_next_detail()
+            return
+        # Extract page title and media
+        self.browser_panel.webview.page().runJavaScript(
+            "document.title", self._auto_on_title_got)
+
+    def _auto_on_title_got(self, title):
+        self._auto_current_title = (title or "untitled").strip().replace('/', '_').replace('\\', '_')[:80]
+        self.bottom_bar.log_message(f"标题: {self._auto_current_title}")
+        # Extract media
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(3000, self._auto_extract_media)
+
+    def _auto_extract_media(self):
+        if not self._current_rule:
+            self._auto_detail_index += 1
+            self._auto_process_next_detail()
+            return
+        r = self._current_rule
+        di = r.get("detail_images")
+        if not di:
+            self._auto_detail_index += 1
+            self._auto_process_next_detail()
+            return
+        css = di.get("css", "img")
+        attr = di.get("attribute", "src")
+        js = f"""
+(function() {{
+  function sd(doc) {{
+    var r = [];
+    Array.from(doc.querySelectorAll({json.dumps(css)})).forEach(function(el) {{
+      var u = el.getAttribute({json.dumps(attr)}) || el.src || '';
+      if (u) r.push(u);
+    }});
+    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {{
+      try {{ if (f.contentDocument) r = r.concat(sd(f.contentDocument)); }} catch(e) {{}}
+    }});
+    return r;
+  }}
+  var urls = sd(document);
+  document.title = '__auto_dl:' + encodeURIComponent(JSON.stringify({{urls: urls, idx: {self._auto_detail_index}}}));
+}})();
+"""
+        self.browser_panel.webview.page().runJavaScript(js)
+
     def _handle_auto_analyze(self, data):
         if self._current_rule:
             return  # Already have a rule, don't create duplicate
@@ -372,14 +521,6 @@ class MainWindow(QMainWindow):
                 self.data_panel.add_page_item(text, url)
         self.bottom_bar.log_message(f"分页: 找到 {sum(1 for l in links if l.get('url'))} 个分页链接")
 
-    def _on_detail_links_found(self, links):
-        for link in links:
-            url = self._resolve_url(link.get("url") or "")
-            text = link.get("text") or url
-            if url:
-                self.data_panel.add_detail_item(text, url)
-        self.bottom_bar.log_message(f"找到 {sum(1 for l in links if l.get('url'))} 个详情链接")
-
     def _on_media_found(self, media):
         self._pending_media.extend(media)
         self.bottom_bar.set_pending_count(len(self._pending_media))
@@ -406,20 +547,27 @@ class MainWindow(QMainWindow):
                     self.bottom_bar.set_pending_count(len(self._pending_media))
             except:
                 pass
-        elif title.startswith("__auto:"):
+        elif title.startswith("__auto_dl:"):
+            try:
+                data = json.loads(urllib.parse.unquote(title[10:]))
+                urls = data.get("urls", [])
+                idx = data.get("idx", 0)
+                if urls:
+                    import os
+                    folder = os.path.join(self._auto_save_base, self._auto_current_title)
+                    self.bottom_bar.log_message(f"下载 {len(urls)} 个文件到 {folder}")
+                    self._downloader.start([{"url": u, "type": "image"} for u in urls], folder)
+                self._auto_detail_index = idx + 1
+                self.bottom_bar.update_progress(self._auto_detail_index, self._auto_total)
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(500, self._auto_process_next_detail)
+            except:
+                pass
             try:
                 data = json.loads(urllib.parse.unquote(title[7:]))
                 self._handle_auto_analyze(data)
             except:
                 pass
-
-    def _on_links_found(self, links):
-        for link in links:
-            url = link.get("url") or ""
-            text = link.get("text") or url
-            if url:
-                self.data_panel.add_page_item(text, url)
-        self.bottom_bar.log_message(f"找到 {sum(1 for l in links if l.get('url'))} 个链接")
 
     def _on_download_progress(self, prog: DownloadProgress):
         self.bottom_bar.update_progress(prog.completed, prog.total_files)

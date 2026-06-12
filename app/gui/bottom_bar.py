@@ -6,6 +6,7 @@ class BottomBar(QWidget):
     pauseRequested = pyqtSignal()
     cancelRequested = pyqtSignal()
     downloadRequested = pyqtSignal()
+    autoDownloadRequested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -15,6 +16,7 @@ class BottomBar(QWidget):
         self.progress.setMaximumWidth(200)
         self.pending_label = QLabel("待下载: 0")
         self.pending_label.setMinimumWidth(80)
+        self.btn_auto = QPushButton("自动下载")
         self.btn_download = QPushButton("开始下载")
         self.btn_pause = QPushButton("暂停")
         self.btn_cancel = QPushButton("取消")
@@ -24,10 +26,12 @@ class BottomBar(QWidget):
         self.log.setMaximumWidth(350)
         layout.addWidget(self.progress)
         layout.addWidget(self.pending_label)
+        layout.addWidget(self.btn_auto)
         layout.addWidget(self.btn_download)
         layout.addWidget(self.btn_pause)
         layout.addWidget(self.btn_cancel)
         layout.addWidget(self.log, 1)
+        self.btn_auto.clicked.connect(lambda: self.autoDownloadRequested.emit())
         self.btn_download.clicked.connect(lambda: self.downloadRequested.emit())
         self.btn_pause.clicked.connect(lambda: self.pauseRequested.emit())
         self.btn_cancel.clicked.connect(lambda: self.cancelRequested.emit())
