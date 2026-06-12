@@ -367,6 +367,7 @@ class MainWindow(QMainWindow):
         except TypeError:
             pass
         if self._auto_stopped: return
+        if self._auto_paused: return self._auto_retry(lambda: self._auto_on_collect_loaded(False))
         if not ok:
             self._auto_page_idx += 1
             return self._auto_retry(self._auto_page_collect)
@@ -374,7 +375,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(3000, self._auto_extract_and_store)
 
     def _auto_extract_and_store(self):
-        if self._auto_stopped or not self._current_rule:
+        if self._auto_stopped: return
+        if self._auto_paused: return self._auto_retry(self._auto_extract_and_store)
+        if not self._current_rule:
             self._auto_page_idx += 1
             return self._auto_retry(self._auto_page_collect)
         from app.models import SelectorRule, SiteRule
@@ -393,7 +396,7 @@ class MainWindow(QMainWindow):
                 self.data_panel.add_detail_item(text, url)
         self.bottom_bar.log_message(f"找到 {len(links)} 个详情链接")
         if hasattr(self, '_auto_all_details'):
-            # Phase 1: store and continue collecting
+            if self._auto_paused: return
             for l in links:
                 u = self._resolve_url(l.get("url",""))
                 if u: self._auto_all_details.append(u)
@@ -417,6 +420,7 @@ class MainWindow(QMainWindow):
         except TypeError:
             pass
         if self._auto_stopped: return
+        if self._auto_paused: return self._auto_retry(lambda: self._auto_on_dl_loaded(False))
         if not ok:
             self._auto_detail_idx += 1
             return self._auto_retry(self._auto_download_next)
@@ -424,14 +428,16 @@ class MainWindow(QMainWindow):
 
     def _auto_on_got_title(self, title):
         if self._auto_stopped: return
+        if self._auto_paused: return self._auto_retry(lambda: self._auto_on_got_title(title))
         self._auto_cur_title = (title or "untitled").strip().replace('/','_').replace('\\','_')[:80]
         self.bottom_bar.log_message(f"标题: {self._auto_cur_title}")
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(3000, self._auto_extract_media)
 
     def _auto_extract_media(self):
-        if self._auto_stopped or not self._current_rule:
-            self._auto_detail_idx += 1
+        if self._auto_stopped: return
+        if self._auto_paused: return self._auto_retry(self._auto_extract_media)
+        if not self._current_rule:
             return self._auto_retry(self._auto_download_next)
         r = self._current_rule
         di = r.get("detail_images")
