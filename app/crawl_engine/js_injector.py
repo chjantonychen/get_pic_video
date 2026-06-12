@@ -59,7 +59,8 @@ class JSInjector:
   search(document);
   if (maxPage > 0 && urlTemplate) {{
     for (var i = 1; i <= maxPage; i++) {{
-      result.push({{url: urlTemplate.replace('{{page}}', i.toString()), text: '\\u7b2c' + i + '\\u9875'}});
+      var u = urlTemplate.replace('{{page}}', i.toString());
+      result.push({{url: u, text: '\\u7b2c' + i + '\\u9875 - ' + u}});
     }}
   }}
   return result;
