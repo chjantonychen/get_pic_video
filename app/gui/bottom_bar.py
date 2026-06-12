@@ -61,6 +61,7 @@ class BottomBar(QWidget):
     def log_message(self, msg: str):
         ts = time.strftime("%H:%M:%S")
         self.log.append(f"[{ts}] {msg}")
+        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
 
     def update_progress(self, current: int, total: int):
         self.progress.setMaximum(total)
