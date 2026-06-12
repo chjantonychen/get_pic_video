@@ -307,31 +307,37 @@ class MainWindow(QMainWindow):
             return
         r = self._current_rule
         di = r.get("detail_images")
-        dv = r.get("detail_videos")
         css = di.get("css", "img") if di else "img"
         attr = di.get("attribute", "src") if di else "src"
         self.bottom_bar.log_message(f"提取: CSS={css} attr={attr}")
+        self._extract_media_retry(css, attr, 0)
+
+    def _extract_media_retry(self, css, attr, attempt):
+        if attempt >= 6:
+            return
+        from PyQt5.QtCore import QTimer
+        self.bottom_bar.log_message(f"提取尝试 #{attempt+1}: CSS={css} attr={attr}")
         js = f"""
 (function() {{
-  function searchDoc(doc, depth) {{
+  function searchDoc(doc) {{
     var results = [];
-    var els = doc.querySelectorAll({json.dumps(css)});
-    if (els.length > 0) {{
-      Array.from(els).forEach(function(el) {{
-        var url = el.getAttribute({json.dumps(attr)}) || el.src || '';
-        if (url) results.push({{url: url, type: 'image'}});
-      }});
-    }}
+    Array.from(doc.querySelectorAll({json.dumps(css)})).forEach(function(el) {{
+      var url = el.getAttribute({json.dumps(attr)}) || el.src || '';
+      if (url) results.push({{url: url, type: 'image'}});
+    }});
     Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {{
-      try {{ if (f.contentDocument) results = results.concat(searchDoc(f.contentDocument, depth+1)); }} catch(e) {{}}
+      try {{ if (f.contentDocument) results = results.concat(searchDoc(f.contentDocument)); }} catch(e) {{}}
     }});
     return results;
   }}
-  var all = searchDoc(document, 0);
-  document.title = '__media:' + encodeURIComponent(JSON.stringify({{count: all.length, all: all}}));
+  var all = searchDoc(document);
+  document.title = '__media:' + encodeURIComponent(JSON.stringify({{count: all.length, all: all, attempt: {attempt}}}));
 }})();
 """
         self.browser_panel.webview.page().runJavaScript(js)
+        if attempt < 2:
+            delay = 2000 * (attempt + 1)
+            QTimer.singleShot(delay, lambda: self._extract_media_retry(css, attr, attempt + 1))
 
     def _start_download(self):
         if self._pending_media:
@@ -407,12 +413,15 @@ class MainWindow(QMainWindow):
                 if isinstance(data, dict):
                     count = data.get("count", 0)
                     all_items = data.get("all", [])
-                    self.bottom_bar.log_message(f"提取结果: 匹配到 {count} 个元素")
-                    for item in all_items[:3]:
-                        self.bottom_bar.log_message(f"  → {item.get('url','')[:80]}")
-                    if all_items:
-                        self._pending_media.extend(all_items)
+                    attempt = data.get("attempt", 0)
+                    if count > 0:
+                        self._pending_media = all_items  # Replace (retries resend all)
                         self.bottom_bar.set_pending_count(len(self._pending_media))
+                        self.bottom_bar.log_message(f"提取成功 (尝试#{attempt+1}): {count} 个媒体文件")
+                        for item in all_items[:3]:
+                            self.bottom_bar.log_message(f"  → {item.get('url','')[:80]}")
+                    else:
+                        self.bottom_bar.log_message(f"提取尝试#{attempt+1}: 未找到元素")
                 elif isinstance(data, list):
                     self._pending_media.extend(data)
                     self.bottom_bar.set_pending_count(len(self._pending_media))
