@@ -428,9 +428,11 @@ class MainWindow(QMainWindow):
         self._crawler.extract_detail_links(rule)
 
     def _on_detail_links_found(self, links):
+        print(f"\n=== 详情链接 ({len(links)} 个) ===")
         for link in links:
             url = self._resolve_url(link.get("url") or "")
             text = link.get("text") or url
+            print(f"  {url[:100]}")
             if url:
                 self.data_panel.add_detail_item(text, url)
         self.bottom_bar.log_message(f"找到 {len(links)} 个详情链接")
