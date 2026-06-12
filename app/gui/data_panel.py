@@ -33,7 +33,6 @@ class DataPanel(QWidget):
         splitter.addWidget(self.detail_list)
         layout.addWidget(splitter)
         self.url_input.returnPressed.connect(lambda: self.urlSubmitted.emit(self.url_input.text()))
-        self.btn_analyze.clicked.connect(lambda: self.urlSubmitted.emit(self.url_input.text()))
         self.page_list.itemDoubleClicked.connect(lambda item: self.pageDoubleClicked.emit(item.data(256)))
         self.detail_list.itemDoubleClicked.connect(lambda item: self.detailDoubleClicked.emit(item.data(256)))
 

@@ -205,6 +205,18 @@ class MainWindow(QMainWindow):
     def _run_auto_analyze(self):
         js = """
 (function() {
+  function countLinks(doc, depth) {
+    var total = 0;
+    Array.from(doc.querySelectorAll('a[href]')).forEach(function(a) { total++; });
+    var iframes = 0;
+    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {
+      iframes++;
+      try { if (f.contentDocument) total += countLinks(f.contentDocument, depth+1); } catch(e) {}
+    });
+    return {total: total, iframes: iframes};
+  }
+  var mainCount = countLinks(document, 0);
+  console.log('GetIv auto-analyze: mainLinks=' + mainCount.total + ' iframes=' + mainCount.iframes);
   function searchLinks(doc) {
     var all = [];
     var imgs = [];
