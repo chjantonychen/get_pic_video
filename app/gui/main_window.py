@@ -344,9 +344,10 @@ class MainWindow(QMainWindow):
         self._auto_page_collect()
 
     def _auto_page_collect(self):
-        """Phase 1: Collect all detail URLs from all pagination pages"""
-        if self._auto_stopped: return self._auto_finish("已停止")
-        if self._auto_paused: return self._auto_retry(self._auto_page_collect)
+        QApplication.processEvents()
+        if getattr(self, '_auto_stopped', False): return self._auto_finish("已停止")
+        if getattr(self, '_auto_paused', False): return self._auto_retry(self._auto_page_collect)
+        if getattr(self, '_auto_finished', False): return
         if self._auto_page_idx >= len(self._auto_pages):
             total = len(self._auto_all_details)
             self.bottom_bar.log_message(f"阶段1完成: 收集到 {total} 个详情链接")
@@ -366,8 +367,8 @@ class MainWindow(QMainWindow):
             self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_collect_loaded)
         except TypeError:
             pass
-        if self._auto_stopped: return
-        if self._auto_paused: return self._auto_retry(lambda: self._auto_on_collect_loaded(False))
+        if getattr(self, '_auto_stopped', False): return
+        if getattr(self, '_auto_paused', False): return self._auto_retry(lambda: self._auto_on_collect_loaded(False))
         if not ok:
             self._auto_page_idx += 1
             return self._auto_retry(self._auto_page_collect)
@@ -375,9 +376,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(3000, self._auto_extract_and_store)
 
     def _auto_extract_and_store(self):
-        if self._auto_stopped: return
-        if self._auto_paused: return self._auto_retry(self._auto_extract_and_store)
-        if not self._current_rule:
+        if getattr(self, '_auto_stopped', False): return
+        if getattr(self, '_auto_paused', False): return self._auto_retry(self._auto_extract_and_store)
+        if not getattr(self, '_current_rule', None):
             self._auto_page_idx += 1
             return self._auto_retry(self._auto_page_collect)
         from app.models import SelectorRule, SiteRule
@@ -396,7 +397,7 @@ class MainWindow(QMainWindow):
                 self.data_panel.add_detail_item(text, url)
         self.bottom_bar.log_message(f"找到 {len(links)} 个详情链接")
         if hasattr(self, '_auto_all_details'):
-            if self._auto_paused: return
+            if getattr(self, '_auto_paused', False): return
             for l in links:
                 u = self._resolve_url(l.get("url",""))
                 if u: self._auto_all_details.append(u)
@@ -405,9 +406,11 @@ class MainWindow(QMainWindow):
 
     def _auto_download_next(self):
         """Phase 2: Download each detail page"""
-        if self._auto_stopped: return self._auto_finish("已停止")
-        if self._auto_paused: return self._auto_retry(self._auto_download_next)
+        if getattr(self, '_auto_stopped', False): return self._auto_finish("已停止")
+        if getattr(self, '_auto_paused', False): return self._auto_retry(self._auto_download_next)
+        if getattr(self, '_auto_finished', False): return
         if self._auto_detail_idx >= len(self._auto_all_details):
+            self._auto_finished = True
             return self._auto_finish("全部完成")
         url = self._auto_all_details[self._auto_detail_idx]
         self.bottom_bar.log_message(f"下载 [{self._auto_detail_idx+1}/{len(self._auto_all_details)}]")
@@ -419,25 +422,25 @@ class MainWindow(QMainWindow):
             self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_dl_loaded)
         except TypeError:
             pass
-        if self._auto_stopped: return
-        if self._auto_paused: return self._auto_retry(lambda: self._auto_on_dl_loaded(False))
+        if getattr(self, '_auto_stopped', False): return
+        if getattr(self, '_auto_paused', False): return self._auto_retry(lambda: self._auto_on_dl_loaded(False))
         if not ok:
             self._auto_detail_idx += 1
             return self._auto_retry(self._auto_download_next)
         self.browser_panel.webview.page().runJavaScript("document.title", self._auto_on_got_title)
 
     def _auto_on_got_title(self, title):
-        if self._auto_stopped: return
-        if self._auto_paused: return self._auto_retry(lambda: self._auto_on_got_title(title))
+        if getattr(self, '_auto_stopped', False): return
+        if getattr(self, '_auto_paused', False): return self._auto_retry(lambda: self._auto_on_got_title(title))
         self._auto_cur_title = (title or "untitled").strip().replace('/','_').replace('\\','_')[:80]
         self.bottom_bar.log_message(f"标题: {self._auto_cur_title}")
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(3000, self._auto_extract_media)
 
     def _auto_extract_media(self):
-        if self._auto_stopped: return
-        if self._auto_paused: return self._auto_retry(self._auto_extract_media)
-        if not self._current_rule:
+        if getattr(self, '_auto_stopped', False): return
+        if getattr(self, '_auto_paused', False): return self._auto_retry(self._auto_extract_media)
+        if not getattr(self, '_current_rule', None):
             return self._auto_retry(self._auto_download_next)
         r = self._current_rule
         di = r.get("detail_images")
@@ -478,7 +481,12 @@ class MainWindow(QMainWindow):
         self.bottom_bar.btn_auto_pause.setText("恢复自动" if is_paused else "暂停自动")
         self.bottom_bar.log_message("已暂停" if is_paused else "已恢复")
         if not is_paused:
-            self._auto_retry(self._auto_page_collect if hasattr(self, '_auto_all_details') and self._auto_detail_idx == 0 else self._auto_download_next)
+            in_phase1 = hasattr(self, '_auto_all_details') and self._auto_detail_idx == 0
+            in_phase2 = hasattr(self, '_auto_all_details') and self._auto_detail_idx < len(self._auto_all_details)
+            if in_phase1:
+                self._auto_retry(self._auto_page_collect)
+            elif in_phase2:
+                self._auto_retry(self._auto_download_next)
 
     def _stop_auto_download(self):
         self._auto_stopped = True
