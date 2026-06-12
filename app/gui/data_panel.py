@@ -127,18 +127,6 @@ class DataPanel(QWidget):
                 item.setText(f"[{status}] {detail[:80]}")
                 break
 
-    def _download_media_tab(self, media_type):
-        ml = getattr(self, f'_media_list_{media_type}')
-        urls = []
-        for i in range(ml.count()):
-            url = ml.item(i).data(256)
-            if url:
-                urls.append({"url": url, "type": media_type})
-        if urls:
-            from PyQt5.QtCore import QObject
-            getattr(self, f'_download_{media_type}_requested', lambda: None)()
-        # We'll connect this from main_window
-
     def add_media_item(self, media_type, url, text=""):
         ml = getattr(self, f'_media_list_{media_type}')
         item = QListWidgetItem(text or url)

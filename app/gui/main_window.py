@@ -1,5 +1,6 @@
-from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction, QApplication
+from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction, QShortcut
 from PyQt5.QtCore import QUrl, pyqtSignal
+from PyQt5.QtGui import QKeySequence
 import json, urllib.parse, os
 from app.gui.browser_panel import BrowserPanel
 from app.gui.data_panel import DataPanel
@@ -20,6 +21,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("GetIv - 网站媒体下载器")
         self.resize(1200, 800)
+        self.setMinimumSize(900, 600)
         self._config = load_config()
         self._current_rule = None
         self._picked_selectors = {}
@@ -67,6 +69,25 @@ class MainWindow(QMainWindow):
         self.data_panel.clearPagesRequested.connect(self.data_panel.clear_pages)
         self.data_panel.clearDetailsRequested.connect(self.data_panel.clear_details)
         self.browser_panel.navigate("about:blank")
+
+        # Tooltips
+        self.data_panel.url_input.setToolTip("输入网址，Enter 或点击「分析」")
+        self.data_panel.btn_analyze.setToolTip("分析当前页面 (Ctrl+Enter)")
+        self.data_panel.btn_new_rule.setToolTip("创建新规则")
+        self.browser_panel.btn_pick.setToolTip("开启/关闭点选模式")
+        self.bottom_bar.btn_auto.setToolTip("自动遍历分页提取详情并下载")
+        self.bottom_bar.btn_download.setToolTip("下载已提取的媒体文件")
+        self.bottom_bar.btn_pause.setToolTip("暂停下载")
+        self.bottom_bar.btn_cancel.setToolTip("取消下载")
+
+        # Keyboard shortcuts
+        QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(
+            lambda: self.data_panel.urlSubmitted.emit(self.data_panel.url_input.text()))
+        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(self._start_download)
+        QShortcut(QKeySequence("Ctrl+Shift+A"), self).activated.connect(self._start_auto_download)
+        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self._stop_auto_download)
+        QShortcut(QKeySequence("F5"), self).activated.connect(
+            lambda: self.browser_panel.webview.reload())
 
     def _build_menu(self):
         menubar = self.menuBar()
@@ -305,7 +326,7 @@ class MainWindow(QMainWindow):
         self.bottom_bar.log_message(f"页面标题: {self._current_page_title}")
         r = self._current_rule
         from PyQt5.QtCore import QTimer
-        QTimer.singleShot(3000, lambda: self._media_extract(r.get("detail_images"), r.get("detail_videos")))
+        QTimer.singleShot(1500, lambda: self._media_extract(r.get("detail_images"), r.get("detail_videos")))
 
     def _media_extract(self, di, dv):
         self.bottom_bar.log_message("提取媒体...")
@@ -384,8 +405,6 @@ class MainWindow(QMainWindow):
                     except Exception as e2:
                         self.bottom_bar.log_message(f"添加媒体失败: {e2}")
                 self.bottom_bar.log_message(f"分类: {types}")
-                for item in all_items[:5]:
-                    self.bottom_bar.log_message(f"  [{item.get('type','')}] {item.get('url','')[:60]}")
         except Exception as e:
             self.bottom_bar.log_message(f"JS结果解析错误: {e}")
 
@@ -446,7 +465,6 @@ class MainWindow(QMainWindow):
         self._auto_page_collect()
 
     def _auto_page_collect(self):
-        QApplication.processEvents()
         if getattr(self, '_auto_stopped', False): return self._auto_finish("已停止")
         if getattr(self, '_auto_paused', False): return self._auto_retry(self._auto_page_collect)
         if getattr(self, '_auto_finished', False): return
@@ -476,7 +494,7 @@ class MainWindow(QMainWindow):
             self._auto_page_idx += 1
             return self._auto_retry(self._auto_page_collect)
         from PyQt5.QtCore import QTimer
-        QTimer.singleShot(3000, self._auto_extract_and_store)
+        QTimer.singleShot(1500, self._auto_extract_and_store)
 
     def _auto_extract_and_store(self):
         if getattr(self, '_auto_stopped', False): return
@@ -493,11 +511,9 @@ class MainWindow(QMainWindow):
         self._crawler.extract_detail_links(rule)
 
     def _on_detail_links_found(self, links):
-        print(f"\n=== 详情链接 ({len(links)} 个) ===")
         for link in links:
             url = self._resolve_url(link.get("url") or "")
             text = link.get("text") or url
-            print(f"  {url[:100]}")
             if url:
                 self.data_panel.add_detail_item(text, url)
         self.bottom_bar.log_message(f"找到 {len(links)} 个详情链接")
@@ -540,7 +556,7 @@ class MainWindow(QMainWindow):
         self._auto_cur_title = (title or "untitled").strip().replace('/','_').replace('\\','_')[:80]
         self.bottom_bar.log_message(f"标题: {self._auto_cur_title}")
         from PyQt5.QtCore import QTimer
-        QTimer.singleShot(3000, self._auto_extract_media)
+        QTimer.singleShot(1500, self._auto_extract_media)
 
     def _auto_extract_media(self):
         if getattr(self, '_auto_stopped', False): return
@@ -662,38 +678,7 @@ class MainWindow(QMainWindow):
                 self.data_panel.add_media_item(t, url)
 
     def _on_page_title_changed(self, title):
-        if title.startswith("__media:"):
-            try:
-                data = json.loads(urllib.parse.unquote(title[8:]))
-                self.bottom_bar.log_message(f"收到__media: 数据={data.get('count','?') if isinstance(data,dict) else 'list'}")
-                if isinstance(data, dict):
-                    count = data.get("count", 0)
-                    all_items = data.get("all", [])
-                    attempt = data.get("attempt", 0)
-                    self.bottom_bar.log_message(f"解析: items={len(all_items)}, attempt={attempt}")
-                    if count > 0:
-                        self._pending_media = all_items
-                        self.bottom_bar.set_pending_count(len(self._pending_media))
-                        self.bottom_bar.log_message(f"提取成功 (尝试#{attempt+1}): {count} 个媒体文件")
-                        types = {}
-                        for item in all_items:
-                            t = item.get("type", "image")
-                            types[t] = types.get(t, 0) + 1
-                            try:
-                                self.data_panel.add_media_item(t, item.get("url",""))
-                            except Exception as e2:
-                                self.bottom_bar.log_message(f"添加媒体失败: {e2}")
-                        self.bottom_bar.log_message(f"分类: {types}")
-                        for item in all_items[:3]:
-                            self.bottom_bar.log_message(f"  → [{item.get('type','')}] {item.get('url','')[:60]}")
-                    else:
-                        self.bottom_bar.log_message(f"提取尝试#{attempt+1}: 未找到元素")
-                elif isinstance(data, list):
-                    self._pending_media.extend(data)
-                    self.bottom_bar.set_pending_count(len(self._pending_media))
-            except Exception as e:
-                self.bottom_bar.log_message(f"__media解析错误: {e}")
-        elif title.startswith("__auto:"):
+        if title.startswith("__auto:"):
             try:
                 data = json.loads(urllib.parse.unquote(title[7:]))
                 self._handle_auto_analyze(data)

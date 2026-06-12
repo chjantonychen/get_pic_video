@@ -14,6 +14,7 @@ pytest tests/ -v
 - **技术栈**: PyQt5, Qt WebEngine (Chromium 87), ffmpeg
 - **核心模块**: `app/gui/` (界面), `app/rule_builder/` (点选引擎), `app/crawl_engine/` (爬取), `app/download_engine/` (下载)
 - **规则存储**: `config.json` (同级目录)，自动以域名为规则名
+- **快捷键**: Ctrl+Enter 分析, Ctrl+D 下载, Ctrl+Shift+A 自动下载, F5 刷新浏览器
 
 ## 关键要点
 - **iframe 网站**: 内容在 `<iframe>` 中，所有 JS 注入和爬取需递归搜索 iframe (`f.contentDocument`)
