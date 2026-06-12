@@ -345,6 +345,7 @@ class MainWindow(QMainWindow):
         self._auto_stopped = False
         self._auto_page_idx = 0
         self._auto_pages = pages
+        self._auto_collecting = True
         self._auto_all_details = []  # Collect all detail URLs in phase 1
         self._auto_detail_idx = 0
         self._auto_save_base = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
@@ -359,6 +360,7 @@ class MainWindow(QMainWindow):
         if getattr(self, '_auto_finished', False): return
         if self._auto_page_idx >= len(self._auto_pages):
             total = len(self._auto_all_details)
+            self._auto_collecting = False
             self.bottom_bar.log_message(f"阶段1完成: 收集到 {total} 个详情链接")
             if total == 0:
                 return self._auto_finish("无详情链接")
@@ -405,7 +407,7 @@ class MainWindow(QMainWindow):
             if url:
                 self.data_panel.add_detail_item(text, url)
         self.bottom_bar.log_message(f"找到 {len(links)} 个详情链接")
-        if hasattr(self, '_auto_all_details'):
+        if getattr(self, '_auto_collecting', False):
             if getattr(self, '_auto_paused', False): return
             for l in links:
                 u = self._resolve_url(l.get("url",""))
