@@ -289,14 +289,12 @@ class MainWindow(QMainWindow):
         di = r.get("detail_images")
         dv = r.get("detail_videos")
         self.bottom_bar.log_message(f"规则: 图片CSS={di.get('css','无') if di else '无'}, 视频CSS={dv.get('css','无') if dv else '无'}")
-        self._media_extract(di, dv, 0)
-
-    def _media_extract(self, di, dv, attempt):
-        if attempt >= 4:
-            self.bottom_bar.log_message("提取结束: 已达最大尝试次数")
-            return
+        # Wait 3s for iframe dynamic content, then extract once
         from PyQt5.QtCore import QTimer
-        self.bottom_bar.log_message(f"媒体提取 #{attempt+1}")
+        QTimer.singleShot(3000, lambda: self._media_extract(di, dv))
+
+    def _media_extract(self, di, dv):
+        self.bottom_bar.log_message("提取媒体...")
         js = """
 (function() {
   var all = [];
@@ -335,7 +333,6 @@ class MainWindow(QMainWindow):
 })();
 """
         self.browser_panel.webview.page().runJavaScript(js, lambda result: self._on_media_result(result))
-        QTimer.singleShot(3000, lambda: self._media_extract(di, dv, attempt + 1))
 
     def _on_media_result(self, result):
         try:
