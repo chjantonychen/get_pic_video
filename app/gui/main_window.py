@@ -170,6 +170,7 @@ class MainWindow(QMainWindow):
     def _on_url_submitted(self, url: str):
         self.data_panel.clear_pages()
         self._pending_media = []
+        self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"导航到: {url}")
 
@@ -178,11 +179,67 @@ class MainWindow(QMainWindow):
         if url:
             self.data_panel.clear_pages()
             self._pending_media = []
-            self.browser_panel.webview.page().loadFinished.connect(self._delayed_crawl)
+            self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
             self.browser_panel.navigate(url)
             self.bottom_bar.log_message(f"导航到: {url}")
         elif self._current_rule:
             self._run_crawl_now()
+
+    def _delayed_auto_analyze(self, ok):
+        try:
+            self.browser_panel.webview.page().loadFinished.disconnect(self._delayed_auto_analyze)
+        except TypeError:
+            pass
+        if not ok:
+            return
+        if self._current_rule:
+            self._run_crawl_now()
+        elif not self._picked_selectors:
+            self._auto_analyze_page()
+
+    def _auto_analyze_page(self):
+        """自动分析页面结构，生成规则"""
+        js = """
+(function() {
+  function searchLinks(doc) {
+    var all = [];
+    var imgs = [];
+    Array.from(doc.querySelectorAll('a[href]')).forEach(function(a) {
+      var h = a.href.split('?')[0].split('#')[0];
+      if (h && !h.endsWith('/')) all.push({href: h, text: (a.textContent||'').trim()});
+    });
+    Array.from(doc.querySelectorAll('img[src]')).forEach(function(img) {
+      imgs.push({src: img.src, alt: (img.alt||'').trim()});
+    });
+    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {
+      try { if (f.contentDocument) { var r = searchLinks(f.contentDocument); all = all.concat(r.all); imgs = imgs.concat(r.imgs); } } catch(e) {}
+    });
+    return {all: all, imgs: imgs};
+  }
+  var data = searchLinks(document);
+  // Group links by path pattern
+  var groups = {};
+  data.all.forEach(function(l) {
+    var parts = l.href.split('/');
+    var key = parts.slice(0, -1).join('/') + '/';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(l.href);
+  });
+  // Find the group with most numeric IDs (likely detail links)
+  var best = {key: '', count: 0, samples: []};
+  for (var k in groups) {
+    if (groups[k].length > best.count) {
+      best = {key: k, count: groups[k].length, samples: groups[k].slice(0, 3)};
+    }
+  }
+  document.title = '__auto:' + encodeURIComponent(JSON.stringify({
+    totalLinks: data.all.length,
+    totalImgs: data.imgs.length,
+    bestGroup: best
+  }));
+})();
+"""
+        self.browser_panel.webview.page().runJavaScript(js)
 
     def _delayed_crawl(self, ok):
         if ok and self._current_rule:
@@ -211,7 +268,7 @@ class MainWindow(QMainWindow):
     def _on_page_double_clicked(self, url: str):
         self.data_panel.clear_details()
         self._pending_media = []
-        self.browser_panel.webview.page().loadFinished.connect(self._delayed_crawl)
+        self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"打开分页: {url}")
 
@@ -256,13 +313,51 @@ var all = [];
         else:
             self.bottom_bar.log_message("没有待下载的媒体文件，请先双击详情页分析")
 
+    def _handle_auto_analyze(self, data):
+        try:
+            best = data.get("bestGroup", {})
+            samples = best.get("samples", [])
+            if not samples:
+                self.bottom_bar.log_message("自动分析: 未能检测到页面结构")
+                return
+            from urllib.parse import urlparse
+            domain = urlparse(samples[0]).netloc or "unknown"
+            import re
+            # Generate URL pattern from sample
+            sample = samples[0]
+            pattern = re.sub(r"/\d+", r"/\\d+", sample)
+            # Create rule
+            from app.models import SelectorRule
+            rule_data = {
+                "name": domain,
+                "url_pattern": "",
+                "page_list": SelectorRule(css="", attribute="href", url_pattern=pattern),
+                "detail_images": SelectorRule(css="img", attribute="src"),
+                "pagination": None,
+                "detail_videos": None,
+                "next_button": None,
+            }
+            # Save rule
+            import dataclasses
+            rule_dict = {k: dataclasses.asdict(v) if hasattr(v, '__dataclass_fields__') else v for k, v in rule_data.items()}
+            # Remove None values for optional fields
+            rule_dict = {k: v for k, v in rule_dict.items() if v is not None}
+            # Handle SiteRule required fields
+            rule_dict["name"] = domain
+            self._config["rules"].append(rule_dict)
+            save_config(self._config)
+            # Select the new rule
+            self._current_rule = rule_dict
+            self.data_panel.rule_selector.addItem(domain)
+            self.data_panel.rule_selector.setCurrentIndex(self.data_panel.rule_selector.count() - 1)
+            self.bottom_bar.log_message(f"自动分析: 检测到 {data.get('totalLinks',0)} 个链接，已创建规则「{domain}」")
+            self.bottom_bar.log_message(f"URL模式: {pattern[:80]}")
+            # Run crawl with the new rule
+            self._run_crawl_now()
+        except Exception as e:
+            self.bottom_bar.log_message(f"自动分析失败: {e}")
+
     def _on_links_found(self, links):
-        for link in links:
-            url = link.get("url") or ""
-            text = link.get("text") or url
-            if url:
-                self.data_panel.add_page_item(text, url)
-        self.bottom_bar.log_message(f"找到 {sum(1 for l in links if l.get('url'))} 个链接")
 
     def _on_media_found(self, media):
         self._pending_media.extend(media)
@@ -277,6 +372,20 @@ var all = [];
                     self.bottom_bar.log_message(f"解析到 {len(data)} 个媒体文件，累计 {len(self._pending_media)} 个")
             except:
                 pass
+        elif title.startswith("__auto:"):
+            try:
+                data = json.loads(urllib.parse.unquote(title[7:]))
+                self._handle_auto_analyze(data)
+            except:
+                pass
+
+    def _on_links_found(self, links):
+        for link in links:
+            url = link.get("url") or ""
+            text = link.get("text") or url
+            if url:
+                self.data_panel.add_page_item(text, url)
+        self.bottom_bar.log_message(f"找到 {sum(1 for l in links if l.get('url'))} 个链接")
 
     def _on_download_progress(self, prog: DownloadProgress):
         self.bottom_bar.update_progress(prog.completed, prog.total_files)
