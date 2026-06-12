@@ -35,9 +35,7 @@
       document.removeEventListener("mouseover", __hover, true);
       document.removeEventListener("mouseout", __unhover, true);
       document.removeEventListener("click", __pick, true);
-      if (window.__pickerBridge) {
-        __pickerBridge.onElementPicked(sel);
-      }
+      document.title = "__pick:" + encodeURIComponent(sel);
     }, true);
   };
 

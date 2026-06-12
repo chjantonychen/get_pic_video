@@ -1,52 +1,36 @@
-import os, json
-from PyQt5.QtCore import QObject
-from PyQt5.QtWebChannel import QWebChannel
-from app.rule_builder.picker_bridge import PickerBridge
-
+import os, json, urllib.parse
+from PyQt5.QtCore import QObject, pyqtSignal
 
 class SelectorPicker(QObject):
+    elementPicked = pyqtSignal(str)
+
     def __init__(self, page):
         super().__init__()
         self._page = page
-        self._bridge = PickerBridge()
-        self._channel = QWebChannel(page)
-        self._channel.registerObject("picker", self._bridge)
-        page.setWebChannel(self._channel)
         self._enabled = False
+        self._last_title = ""
         base = os.path.join(os.path.dirname(__file__), "..", "..", "resources", "js")
         with open(os.path.join(base, "selector_picker.js")) as f:
             self._js_code = f.read()
+        page.titleChanged.connect(self._on_title_changed)
 
     def enable(self):
         self._enabled = True
         self._page.runJavaScript(self._js_code)
-        self._page.runJavaScript("""
-            (function() {
-                function init() {
-                    new QWebChannel(qt.webChannelTransport, function(ch) {
-                        window.__pickerBridge = ch.objects.picker;
-                        __enablePicker();
-                    });
-                }
-                if (typeof QWebChannel !== 'undefined') { init(); }
-                else {
-                    var s = document.createElement('script');
-                    s.src = 'qrc:///qtwebchannel/qwebchannel.js';
-                    s.onload = init;
-                    document.head.appendChild(s);
-                }
-            })();
-        """)
+        self._page.runJavaScript("__enablePicker();")
 
     def disable(self):
         self._enabled = False
-        self._page.runJavaScript("""document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; });""")
         self._page.runJavaScript("__disablePicker();")
 
     def reenable(self):
-        """导航后重新注入（若点选模式仍激活）"""
         if self._enabled:
             self.enable()
+
+    def _on_title_changed(self, title):
+        if title.startswith("__pick:"):
+            selector = urllib.parse.unquote(title[7:])
+            self.elementPicked.emit(selector)
 
     def validate_selector(self, css: str, callback):
         safe_css = json.dumps(css)
@@ -54,7 +38,3 @@ class SelectorPicker(QObject):
 
     def clear_highlights(self):
         self._page.runJavaScript("""document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; });""")
-
-    @property
-    def bridge(self) -> PickerBridge:
-        return self._bridge

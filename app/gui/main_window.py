@@ -43,7 +43,7 @@ class MainWindow(QMainWindow):
         self._crawler.linksFound.connect(self._on_links_found)
         self._crawler.mediaFound.connect(self._on_media_found)
         self._downloader.progressUpdated.connect(self._on_download_progress)
-        self._selector_picker.bridge.elementPicked.connect(self._on_element_picked)
+        self._selector_picker.elementPicked.connect(self._on_element_picked)
         self.data_panel.btn_new_rule.clicked.connect(self._start_new_rule)
         self.browser_panel.btn_pick.clicked.connect(self._toggle_pick_mode)
         self.browser_panel.webview.page().loadFinished.connect(
