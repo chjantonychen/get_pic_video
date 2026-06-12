@@ -90,6 +90,10 @@ class MainWindow(QMainWindow):
                 "document.title",
                 lambda t: self.bottom_bar.log_message(f"JS注入测试: 页面标题为「{t}」")
             )
+            self.browser_panel.webview.page().runJavaScript(
+                "var s=document.getElementById('getiv-picker-style'); s ? s.id + ' exists, length=' + s.textContent.length : 'style NOT found'",
+                lambda r: self.bottom_bar.log_message(f"CSS注入测试: {r}")
+            )
         else:
             self._selector_picker.disable()
 
