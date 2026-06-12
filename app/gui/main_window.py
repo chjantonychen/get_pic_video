@@ -308,22 +308,29 @@ class MainWindow(QMainWindow):
         r = self._current_rule
         di = r.get("detail_images")
         dv = r.get("detail_videos")
-        js = """
-function searchDoc(doc, css, attr, type) {
-  var r = [];
-  doc.querySelectorAll(css).forEach(function(el) { r.push({url: el.getAttribute(attr)||el.src, type: type}); });
-  doc.querySelectorAll("iframe").forEach(function(f) {
-    try { if (f.contentDocument) r = r.concat(searchDoc(f.contentDocument, css, attr, type)); } catch(e) {}
-  });
-  return r;
-}
-var all = [];
+        css = di.get("css", "img") if di else "img"
+        attr = di.get("attribute", "src") if di else "src"
+        self.bottom_bar.log_message(f"提取: CSS={css} attr={attr}")
+        js = f"""
+(function() {{
+  function searchDoc(doc, depth) {{
+    var results = [];
+    var els = doc.querySelectorAll({json.dumps(css)});
+    if (els.length > 0) {{
+      Array.from(els).forEach(function(el) {{
+        var url = el.getAttribute({json.dumps(attr)}) || el.src || '';
+        if (url) results.push({{url: url, type: 'image'}});
+      }});
+    }}
+    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {{
+      try {{ if (f.contentDocument) results = results.concat(searchDoc(f.contentDocument, depth+1)); }} catch(e) {{}}
+    }});
+    return results;
+  }}
+  var all = searchDoc(document, 0);
+  document.title = '__media:' + encodeURIComponent(JSON.stringify({{count: all.length, all: all}}));
+}})();
 """
-        if di:
-            js += f"all = all.concat(searchDoc(document, {json.dumps(di['css'])}, {json.dumps(di['attribute'])}, 'image'));"
-        if dv:
-            js += f"all = all.concat(searchDoc(document, {json.dumps(dv['css'])}, {json.dumps(dv['attribute'])}, 'video'));"
-        js += "document.title='__media:'+encodeURIComponent(JSON.stringify(all));"
         self.browser_panel.webview.page().runJavaScript(js)
 
     def _start_download(self):
@@ -397,10 +404,18 @@ var all = [];
         if title.startswith("__media:"):
             try:
                 data = json.loads(urllib.parse.unquote(title[8:]))
-                if isinstance(data, list):
+                if isinstance(data, dict):
+                    count = data.get("count", 0)
+                    all_items = data.get("all", [])
+                    self.bottom_bar.log_message(f"提取结果: 匹配到 {count} 个元素")
+                    for item in all_items[:3]:
+                        self.bottom_bar.log_message(f"  → {item.get('url','')[:80]}")
+                    if all_items:
+                        self._pending_media.extend(all_items)
+                        self.bottom_bar.set_pending_count(len(self._pending_media))
+                elif isinstance(data, list):
                     self._pending_media.extend(data)
                     self.bottom_bar.set_pending_count(len(self._pending_media))
-                    self.bottom_bar.log_message(f"解析到 {len(data)} 个媒体文件，累计 {len(self._pending_media)} 个")
             except:
                 pass
         elif title.startswith("__auto:"):
