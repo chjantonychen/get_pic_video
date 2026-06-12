@@ -170,6 +170,7 @@ class MainWindow(QMainWindow):
     def _on_url_submitted(self, url: str):
         self.data_panel.clear_pages()
         self._pending_media = []
+        self.bottom_bar.set_pending_count(0)
         self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"导航到: {url}")
@@ -179,6 +180,7 @@ class MainWindow(QMainWindow):
         if url:
             self.data_panel.clear_pages()
             self._pending_media = []
+            self.bottom_bar.set_pending_count(0)
             self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
             self.browser_panel.navigate(url)
             self.bottom_bar.log_message(f"导航到: {url}")
@@ -388,6 +390,7 @@ var all = [];
 
     def _on_media_found(self, media):
         self._pending_media.extend(media)
+        self.bottom_bar.set_pending_count(len(self._pending_media))
         self.bottom_bar.log_message(f"找到 {len(media)} 个媒体文件，累计 {len(self._pending_media)} 个")
 
     def _on_page_title_changed(self, title):
@@ -396,6 +399,7 @@ var all = [];
                 data = json.loads(urllib.parse.unquote(title[8:]))
                 if isinstance(data, list):
                     self._pending_media.extend(data)
+                    self.bottom_bar.set_pending_count(len(self._pending_media))
                     self.bottom_bar.log_message(f"解析到 {len(data)} 个媒体文件，累计 {len(self._pending_media)} 个")
             except:
                 pass

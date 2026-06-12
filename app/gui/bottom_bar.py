@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QProgressBar, QPushButton, QTextEdit
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QProgressBar, QPushButton, QTextEdit, QLabel
 from PyQt5.QtCore import pyqtSignal
 import time
 
@@ -12,15 +12,18 @@ class BottomBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 2, 5, 2)
         self.progress = QProgressBar()
-        self.progress.setMaximumWidth(300)
+        self.progress.setMaximumWidth(200)
+        self.pending_label = QLabel("待下载: 0")
+        self.pending_label.setMinimumWidth(80)
         self.btn_download = QPushButton("开始下载")
         self.btn_pause = QPushButton("暂停")
         self.btn_cancel = QPushButton("取消")
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(60)
-        self.log.setMaximumWidth(400)
+        self.log.setMaximumWidth(350)
         layout.addWidget(self.progress)
+        layout.addWidget(self.pending_label)
         layout.addWidget(self.btn_download)
         layout.addWidget(self.btn_pause)
         layout.addWidget(self.btn_cancel)
@@ -36,3 +39,6 @@ class BottomBar(QWidget):
     def update_progress(self, current: int, total: int):
         self.progress.setMaximum(total)
         self.progress.setValue(current)
+
+    def set_pending_count(self, count: int):
+        self.pending_label.setText(f"待下载: {count}")
