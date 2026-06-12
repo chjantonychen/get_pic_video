@@ -11,7 +11,7 @@ class BrowserPanel(QWidget):
         self.btn_back = QPushButton("◀")
         self.btn_forward = QPushButton("▶")
         self.btn_refresh = QPushButton("🔄")
-        self.btn_pick = QPushButton("点选模式")
+        self.btn_pick = QPushButton("开启点选")
         self.btn_pick.setCheckable(True)
         nav.addWidget(self.btn_back)
         nav.addWidget(self.btn_forward)

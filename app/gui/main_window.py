@@ -46,8 +46,6 @@ class MainWindow(QMainWindow):
         self._selector_picker.elementPicked.connect(self._on_element_picked)
         self.data_panel.btn_new_rule.clicked.connect(self._start_new_rule)
         self.browser_panel.btn_pick.clicked.connect(self._toggle_pick_mode)
-        self.browser_panel.webview.page().loadFinished.connect(
-            lambda ok: self._selector_picker.reenable())
         self.browser_panel.navigate("about:blank")
 
     def _build_menu(self):
@@ -82,13 +80,10 @@ class MainWindow(QMainWindow):
         self.data_panel.clear_pages()
         self.data_panel.clear_details()
         self.data_panel.rule_selector.setCurrentIndex(0)
-        if not self.browser_panel.btn_pick.isChecked():
-            self.browser_panel.btn_pick.setChecked(True)
-            self._toggle_pick_mode(True)
-        self.bottom_bar.log_message("新建规则: 在浏览器中导航到目标网站，然后点击页面元素来标注类型")
+        self.bottom_bar.log_message("新建规则: 先在URL输入框导航到目标网站，页面加载完成后点击「点选模式」按钮")
 
     def _toggle_pick_mode(self, checked):
-        self.browser_panel.btn_pick.setText("退出点选" if checked else "点选模式")
+        self.browser_panel.btn_pick.setText("开启点选" if not checked else "退出点选")
         if checked:
             self._selector_picker.enable()
         else:
