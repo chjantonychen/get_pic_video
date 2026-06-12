@@ -38,6 +38,7 @@ class MainWindow(QMainWindow):
         self._m3u8_handler = M3U8Handler(self._config.get("ffmpeg_path", "ffmpeg"))
         self._downloader = Downloader(self._config, m3u8_handler=self._m3u8_handler)
         self._selector_picker = SelectorPicker(self.browser_panel.page())
+        self._load_rule_list()
         self.data_panel.urlSubmitted.connect(self._on_url_submitted)
         self.data_panel.pageDoubleClicked.connect(self._on_page_double_clicked)
         self.data_panel.detailDoubleClicked.connect(self._on_detail_double_clicked)
@@ -76,6 +77,18 @@ class MainWindow(QMainWindow):
             save_config(self._config)
             self.bottom_bar.log_message("设置已保存")
 
+    def _load_rule_list(self):
+        self.data_panel.rule_selector.clear()
+        self.data_panel.rule_selector.addItem("选择规则...")
+        for r in self._config.get("rules", []):
+            self.data_panel.rule_selector.addItem(r.get("name", "未命名规则"))
+        self.data_panel.rule_selector.currentIndexChanged.connect(self._on_rule_selected)
+
+    def _on_rule_selected(self, idx):
+        if idx > 0 and idx - 1 < len(self._config.get("rules", [])):
+            self._current_rule = self._config["rules"][idx - 1]
+            self.bottom_bar.log_message(f"已选择规则: {self._current_rule['name']}")
+
     def _start_new_rule(self):
         self._current_rule = None
         self._picked_selectors = {}
@@ -100,16 +113,19 @@ class MainWindow(QMainWindow):
             "图片容器": "detail_images", "视频容器": "detail_videos",
             "下一页按钮": "next_button"
         }
-        kwargs = {"name": f"规则_{len(self._config['rules']) + 1}", "url_pattern": "", "anti_crawl": None}
+        kwargs = {"name": f"规则_{len(self._config['rules']) + 1}", "url_pattern": ""}
         for label, picks in self._picked_selectors.items():
             field = type_map.get(label)
             if field and picks:
-                css = picks[0]["css"]
-                attr = picks[0]["attribute"]
-                kwargs[field] = SelectorRule(css=css, attribute=attr)
+                kwargs[field] = SelectorRule(css=picks[0]["css"], attribute=picks[0]["attribute"])
+        if "page_list" not in kwargs or "detail_images" not in kwargs:
+            self.bottom_bar.log_message("规则不完整: 至少需要标注「详情链接」和「图片容器」")
+            return
         try:
             rule = SiteRule(**kwargs)
-            self._config["rules"].append(rule.__dict__)
+            import dataclasses, json
+            rule_dict = dataclasses.asdict(rule)
+            self._config["rules"].append(rule_dict)
             save_config(self._config)
             self.data_panel.rule_selector.addItem(rule.name)
             self.bottom_bar.log_message(f"规则已保存: {rule.name}")
