@@ -289,60 +289,58 @@ class MainWindow(QMainWindow):
         di = r.get("detail_images")
         dv = r.get("detail_videos")
         self.bottom_bar.log_message(f"规则: 图片CSS={di.get('css','无') if di else '无'}, 视频CSS={dv.get('css','无') if dv else '无'}")
-        self._media_extract_attempt = 0
-        self._media_extract()
+        self._media_extract(di, dv, 0)
 
-    def _media_extract(self):
-        if not self._current_rule:
-            self.bottom_bar.log_message("提取中止: 无规则")
-            return
-        if self._media_extract_attempt >= 4:
+    def _media_extract(self, di, dv, attempt):
+        if attempt >= 4:
             self.bottom_bar.log_message("提取结束: 已达最大尝试次数")
             return
-        self._media_extract_attempt += 1
         from PyQt5.QtCore import QTimer
-        r = self._current_rule
-        di = r.get("detail_images")
-        dv = r.get("detail_videos")
-        self.bottom_bar.log_message(f"媒体提取 #{self._media_extract_attempt}: di={bool(di)} dv={bool(dv)}")
+        self.bottom_bar.log_message(f"媒体提取 #{attempt+1}")
         js = """
 (function() {
-  function searchDoc(d) {
-    var r = [];
-    function add(el, type) {
-      var u = el.getAttribute('src') || el.getAttribute('data-src') || el.href || el.src || '';
-      if (u) r.push({url: u, type: type});
-    }
-    try {
-      Array.from(d.querySelectorAll('img[src]')).forEach(function(el) { add(el, 'image'); });
-    } catch(e) {}
-    try {
-      Array.from(d.querySelectorAll('video[src]')).forEach(function(el) { add(el, 'video'); });
-    } catch(e) {}
-    try {
-      Array.from(d.querySelectorAll('source[src]')).forEach(function(el) { add(el, 'video'); });
-    } catch(e) {}
+  var all = [];
+  function add(u, t) { if (u) all.push({url: u, type: t}); }
+  try { Array.from(document.querySelectorAll('img[src]')).forEach(function(el) { add(el.src, 'image'); }); } catch(e) {}
+  try { Array.from(document.querySelectorAll('video[src]')).forEach(function(el) { add(el.src, 'video'); }); } catch(e) {}
+  try { Array.from(document.querySelectorAll('source[src]')).forEach(function(el) { add(el.src, 'video'); }); } catch(e) {}
 """
         if di:
-            js += f"try{{Array.from(d.querySelectorAll({json.dumps(di['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(di['attribute'])})||el.src||'';if(u)r.push({{url:u,type:'image'}});}});}}catch(e){{}}"
+            js += f"try{{Array.from(document.querySelectorAll({json.dumps(di['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(di['attribute'])})||el.src||'';if(u)all.push({{url:u,type:'image'}});}});}}catch(e){{}}"
         if dv:
-            js += f"try{{Array.from(d.querySelectorAll({json.dumps(dv['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(dv['attribute'])})||el.src||'';if(u)r.push({{url:u,type:'video'}});}});}}catch(e){{}}"
+            js += f"try{{Array.from(document.querySelectorAll({json.dumps(dv['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(dv['attribute'])})||el.src||'';if(u)all.push({{url:u,type:'video'}});}});}}catch(e){{}}"
         js += """
-    try {
-      Array.from(d.querySelectorAll('iframe')).forEach(function(f) {
-        try { if (f.contentDocument) r = r.concat(searchDoc(f.contentDocument)); } catch(e) {}
-      });
-    } catch(e) {}
-    return r;
-  }
-  var all = searchDoc(document);
-  document.title = '__media:' + encodeURIComponent(JSON.stringify({count: all.length, all: all, attempt: MEDIA_ATTEMPT}));
+  try { Array.from(document.querySelectorAll('iframe')).forEach(function(f) {
+    try { if (f.contentDocument) Array.from(f.contentDocument.querySelectorAll('img[src],video[src],source[src]')).forEach(function(el) { var u=el.src||''; if(u) add(u, el.tagName==='IMG'?'image':'video'); }); } catch(e) {}
+  }); } catch(e) {}
+  return JSON.stringify({count: all.length, all: all});
 })();
 """
-        js = js.replace("MEDIA_ATTEMPT", str(self._media_extract_attempt))
-        self.bottom_bar.log_message("注入JS提取媒体...")
-        self.browser_panel.webview.page().runJavaScript(js)
-        QTimer.singleShot(3000, self._media_extract)
+        self.browser_panel.webview.page().runJavaScript(js, lambda result: self._on_media_result(result))
+        QTimer.singleShot(3000, lambda: self._media_extract(di, dv, attempt + 1))
+
+    def _on_media_result(self, result):
+        try:
+            import json as j
+            data = j.loads(result) if isinstance(result, str) else result
+            all_items = data.get("all", [])
+            self.bottom_bar.log_message(f"JS返回: {len(all_items)} 个媒体文件")
+            if all_items:
+                self._pending_media = all_items
+                self.bottom_bar.set_pending_count(len(self._pending_media))
+                types = {}
+                for item in all_items:
+                    t = item.get("type", "image")
+                    types[t] = types.get(t, 0) + 1
+                    try:
+                        self.data_panel.add_media_item(t, item.get("url",""))
+                    except Exception as e2:
+                        self.bottom_bar.log_message(f"添加媒体失败: {e2}")
+                self.bottom_bar.log_message(f"分类: {types}")
+                for item in all_items[:5]:
+                    self.bottom_bar.log_message(f"  [{item.get('type','')}] {item.get('url','')[:60]}")
+        except Exception as e:
+            self.bottom_bar.log_message(f"JS结果解析错误: {e}")
 
     def _start_download(self):
         if self._downloader.is_paused:
