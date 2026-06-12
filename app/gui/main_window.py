@@ -142,7 +142,7 @@ class MainWindow(QMainWindow):
         try:
             data = json.loads(data_json)
             selector = data.get("selector", "")
-            attrs = data.get("attrs", [])
+            attrs = data.get("attrs", [])  # [{"name": "src", "value": "http://..."}, ...]
         except:
             selector = data_json
             attrs = []

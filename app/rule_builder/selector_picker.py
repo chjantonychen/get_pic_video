@@ -25,7 +25,7 @@ function getivElementAttrs(el) {
   var found = [];
   for (var i = 0; i < candidates.length; i++) {
     var v = el.getAttribute(candidates[i]);
-    if (v) found.push(candidates[i]);
+    if (v) found.push(candidates[i] + "|" + v);
   }
   return found.join(",");
 }
@@ -126,8 +126,13 @@ class SelectorPicker(QObject):
             raw = urllib.parse.unquote(title[7:])
             parts = raw.split("|", 1)
             selector = parts[0]
-            attrs = parts[1].split(",") if len(parts) > 1 and parts[1] else []
-            self.elementPicked.emit(json.dumps({"selector": selector, "attrs": attrs}))
+            attr_pairs = []
+            if len(parts) > 1 and parts[1]:
+                for item in parts[1].split(","):
+                    kv = item.split("|", 1)
+                    if len(kv) == 2:
+                        attr_pairs.append({"name": kv[0], "value": kv[1]})
+            self.elementPicked.emit(json.dumps({"selector": selector, "attrs": attr_pairs}))
 
     def validate_selector(self, css: str, callback):
         safe_css = json.dumps(css)

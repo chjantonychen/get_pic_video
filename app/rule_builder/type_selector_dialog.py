@@ -3,6 +3,14 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QPushButton, QLabel,
 
 ELEMENT_TYPES = ["分页链接", "详情链接", "图片容器", "视频容器", "下一页按钮"]
 
+FALLBACK_ATTRS = [
+    {"name": "src", "value": ""},
+    {"name": "href", "value": ""},
+    {"name": "data-src", "value": ""},
+    {"name": "data-original", "value": ""},
+    {"name": "data-lazy", "value": ""},
+]
+
 class TypeSelectorDialog(QDialog):
     def __init__(self, selector: str, detected_attrs: list = None, parent=None):
         super().__init__(parent)
@@ -21,10 +29,12 @@ class TypeSelectorDialog(QDialog):
                 rb.setChecked(True)
         layout.addWidget(QLabel("取属性:"))
         self.attr_combo = QComboBox()
-        if detected_attrs:
-            self.attr_combo.addItems(detected_attrs)
-        else:
-            self.attr_combo.addItems(["src", "href", "data-src", "data-original", "data-lazy"])
+        items = detected_attrs if detected_attrs else FALLBACK_ATTRS
+        for item in items:
+            name = item["name"] if isinstance(item, dict) else item
+            value = item.get("value", "") if isinstance(item, dict) else ""
+            display = f"{name} = {value[:80]}" if value else name
+            self.attr_combo.addItem(display, name)
         layout.addWidget(self.attr_combo)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_ok)
@@ -35,5 +45,5 @@ class TypeSelectorDialog(QDialog):
         btn = self._type_group.checkedButton()
         if btn:
             self.selected_type = btn.text()
-            self.selected_attribute = self.attr_combo.currentText()
+            self.selected_attribute = self.attr_combo.currentData()
             self.accept()
