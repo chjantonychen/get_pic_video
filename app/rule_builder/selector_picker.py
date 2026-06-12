@@ -37,14 +37,40 @@ ENABLE_PICKER_JS = """
     if (!doc || doc.__getivActive) return;
     doc.__getivActive = true;
     doc.__lastEl = null;
+    doc.__label = null;
+    doc.__makeLabel = function(el) {
+      if (!doc.__label) {
+        doc.__label = doc.createElement("div");
+        doc.__label.id = "getiv-label";
+        doc.__label.style.cssText = "position:fixed;background:#2196F3;color:#fff;padding:3px 8px;border-radius:4px;font:12px sans-serif;z-index:999999;pointer-events:none;white-space:nowrap;";
+        doc.body.appendChild(doc.__label);
+      }
+      var info = el.tagName.toLowerCase();
+      if (el.id) info += "#" + el.id;
+      else if (el.className && typeof el.className === "string") {
+        var c = el.className.trim().split(/\s+/)[0];
+        if (c) info += "." + c;
+      }
+      if (el.children.length === 0 && el.textContent) {
+        info += " [" + el.textContent.trim().slice(0, 30) + "]";
+      }
+      doc.__label.textContent = info;
+    };
     doc.__onHover = function(e) {
       if (doc.__lastEl) { doc.__lastEl.style.outline = ""; doc.__lastEl.style.background = ""; }
       e.target.style.outline = "3px solid #2196F3";
       e.target.style.outlineOffset = "2px";
       e.target.style.background = "rgba(33,150,243,0.15)";
       doc.__lastEl = e.target;
+      doc.__makeLabel(e.target);
+      doc.__label.style.left = (e.clientX + 10) + "px";
+      doc.__label.style.top = (e.clientY - 30) + "px";
     };
-    doc.__onOut = function(e) { e.target.style.outline = ""; e.target.style.background = ""; };
+    doc.__onOut = function(e) {
+      e.target.style.outline = ""; e.target.style.background = "";
+      if (doc.__label) doc.__label.remove();
+      doc.__label = null;
+    };
     doc.__onPick = function(e) {
       e.preventDefault(); e.stopPropagation();
       var sel = getivGetSelector(e.target);
@@ -74,6 +100,8 @@ DISABLE_PICKER_JS = """
     doc.removeEventListener("mouseout", doc.__onOut, true);
     doc.removeEventListener("click", doc.__onPick, true);
     doc.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
+    var lbl = doc.getElementById("getiv-label");
+    if (lbl) lbl.remove();
     Array.from(doc.querySelectorAll("iframe")).forEach(function(f) {
       try { if (f.contentDocument) disable(f.contentDocument); } catch(e) {}
     });
