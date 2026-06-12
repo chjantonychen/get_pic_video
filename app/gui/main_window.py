@@ -432,7 +432,21 @@ class MainWindow(QMainWindow):
             return self._auto_retry(self._auto_process_detail_page)
         css = di.get("css","img"); attr = di.get("attribute","src")
         js = f"""
-(function(){{function sd(d){{var r=[];Array.from(d.querySelectorAll({json.dumps(css)})).forEach(function(el){{var u=el.getAttribute({json.dumps(attr)})||el.src||'';if(u)r.push(u);}});Array.from(d.querySelectorAll('iframe')).forEach(function(f){{try{{if(f.contentDocument)r=r.concat(sd(f.contentDocument));}}catch(e){{}}}});return r;}}var u=sd(document);document.title='__autodl:'+encodeURIComponent(JSON.stringify({{urls:u,idx:{self._auto_detail_idx}}}));}})();
+(function() {{
+  function sd(d) {{
+    var r = [];
+    Array.from(d.querySelectorAll({json.dumps(css)})).forEach(function(el) {{
+      var u = el.getAttribute({json.dumps(attr)}) || el.src || '';
+      if (u) r.push(u);
+    }});
+    Array.from(d.querySelectorAll('iframe')).forEach(function(f) {{
+      try {{ if (f.contentDocument) r = r.concat(sd(f.contentDocument)); }} catch(e) {{}}
+    }});
+    return r;
+  }}
+  var urls = sd(document);
+  document.title = '__autodl:' + encodeURIComponent(JSON.stringify({{urls: urls, idx: {self._auto_detail_idx}}}));
+}})();
 """
         self.browser_panel.webview.page().runJavaScript(js)
 
@@ -455,24 +469,6 @@ class MainWindow(QMainWindow):
     def _stop_auto_download(self):
         self._auto_stopped = True
         self._auto_finish("已停止")
-        js = f"""
-(function() {{
-  function sd(doc) {{
-    var r = [];
-    Array.from(doc.querySelectorAll({json.dumps(css)})).forEach(function(el) {{
-      var u = el.getAttribute({json.dumps(attr)}) || el.src || '';
-      if (u) r.push(u);
-    }});
-    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {{
-      try {{ if (f.contentDocument) r = r.concat(sd(f.contentDocument)); }} catch(e) {{}}
-    }});
-    return r;
-  }}
-  var urls = sd(document);
-  document.title = '__auto_dl:' + encodeURIComponent(JSON.stringify({{urls: urls, idx: {self._auto_detail_index}}}));
-}})();
-"""
-        self.browser_panel.webview.page().runJavaScript(js)
 
     def _handle_auto_analyze(self, data):
         if self._current_rule:
