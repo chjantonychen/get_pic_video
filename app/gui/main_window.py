@@ -460,8 +460,6 @@ class MainWindow(QMainWindow):
     def _auto_finish(self, msg):
         self.bottom_bar.log_message(f"自动下载: {msg}")
         self.bottom_bar.update_progress(0, 1)
-        for a in ['_auto_pages','_auto_page_idx','_auto_paused','_auto_stopped','_auto_all_details','_auto_detail_idx','_auto_cur_title','_auto_save_base']:
-            if hasattr(self, a): delattr(self, a)
 
     def _auto_retry(self, fn):
         from PyQt5.QtCore import QTimer
