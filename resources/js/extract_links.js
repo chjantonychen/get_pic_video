@@ -4,7 +4,7 @@ function extractLinks(selector, attribute) {
     var els = doc.querySelectorAll(selector);
     Array.from(els).forEach(function(el) {
       all.push({
-        url: el.getAttribute(attribute) || el.href || el.src,
+        url: el.getAttribute(attribute) || el.href || el.src || "",
         text: (el.textContent || "").trim().slice(0, 100)
       });
     });

@@ -4,7 +4,7 @@ function extractMedia(css, attr) {
     var els = doc.querySelectorAll(css);
     Array.from(els).forEach(function(el) {
       all.push({
-        url: el.getAttribute(attr) || el.src,
+        url: el.getAttribute(attr) || el.src || "",
         type: el.tagName === "VIDEO" ? "video" : "image",
         alt: el.getAttribute("alt") || ""
       });

@@ -246,8 +246,11 @@ var all = [];
 
     def _on_links_found(self, links):
         for link in links:
-            self.data_panel.add_page_item(link.get("text", link["url"]), link["url"])
-        self.bottom_bar.log_message(f"找到 {len(links)} 个链接")
+            url = link.get("url") or ""
+            text = link.get("text") or url
+            if url:
+                self.data_panel.add_page_item(text, url)
+        self.bottom_bar.log_message(f"找到 {sum(1 for l in links if l.get('url'))} 个链接")
 
     def _on_media_found(self, media):
         self._pending_media.extend(media)
