@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
         self._crawler.mediaFound.connect(self._on_media_found)
         self._downloader.progressUpdated.connect(self._on_download_progress)
         self._selector_picker.bridge.elementPicked.connect(self._on_element_picked)
+        self.data_panel.btn_new_rule.clicked.connect(self._start_new_rule)
         self.browser_panel.btn_pick.clicked.connect(self._toggle_pick_mode)
         self.browser_panel.navigate("about:blank")
 
@@ -61,6 +62,7 @@ class MainWindow(QMainWindow):
         tool_menu.addAction(act_settings)
         rule_menu = menubar.addMenu("规则")
         act_new = QAction("新建规则", self)
+        act_new.triggered.connect(self._start_new_rule)
         rule_menu.addAction(act_new)
         help_menu = menubar.addMenu("帮助")
         act_about = QAction("关于", self)
@@ -72,6 +74,16 @@ class MainWindow(QMainWindow):
             self._config.update(dlg.get_config())
             save_config(self._config)
             self.bottom_bar.log_message("设置已保存")
+
+    def _start_new_rule(self):
+        self._current_rule = None
+        self.data_panel.clear_pages()
+        self.data_panel.clear_details()
+        self.data_panel.rule_selector.setCurrentIndex(0)
+        if not self.browser_panel.btn_pick.isChecked():
+            self.browser_panel.btn_pick.setChecked(True)
+            self._toggle_pick_mode(True)
+        self.bottom_bar.log_message("新建规则: 在浏览器中导航到目标网站，然后点击页面元素来标注类型")
 
     def _toggle_pick_mode(self, checked):
         self.browser_panel.btn_pick.setText("退出点选" if checked else "点选模式")
