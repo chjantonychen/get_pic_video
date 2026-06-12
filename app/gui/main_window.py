@@ -360,11 +360,8 @@ class MainWindow(QMainWindow):
                     url = item.get("url","")
                     if url:
                         self.bottom_bar.log_message(f"下载M3U8: {url[:60]}")
-                        try:
-                            mp4 = self._m3u8_handler.download_and_convert(url, os.path.join(folder, f"{title}.mp4"))
-                            self.bottom_bar.log_message(f"M3U8完成: {mp4}")
-                        except Exception as e:
-                            self.bottom_bar.log_message(f"M3U8失败: {e}")
+                        import threading
+                        threading.Thread(target=self._download_m3u8, args=(url, title, folder), daemon=True).start()
             if all_items:
                 self._pending_media = [item for item in all_items if '.m3u8' not in item.get("url","").lower()]
                 self.bottom_bar.set_pending_count(len(self._pending_media))
@@ -381,6 +378,14 @@ class MainWindow(QMainWindow):
                     self.bottom_bar.log_message(f"  [{item.get('type','')}] {item.get('url','')[:60]}")
         except Exception as e:
             self.bottom_bar.log_message(f"JS结果解析错误: {e}")
+
+    def _download_m3u8(self, url, title, folder):
+        from PyQt5.QtCore import QTimer
+        try:
+            mp4 = self._m3u8_handler.download_and_convert(url, os.path.join(folder, f"{title}.mp4"))
+            QTimer.singleShot(0, lambda: self.bottom_bar.log_message(f"M3U8完成: {mp4}"))
+        except Exception as e:
+            QTimer.singleShot(0, lambda: self.bottom_bar.log_message(f"M3U8失败: {e}"))
 
     def _start_download(self):
         if self._downloader.is_paused:
