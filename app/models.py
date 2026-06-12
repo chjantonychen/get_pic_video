@@ -19,9 +19,9 @@ class AntiCrawlConfig:
 class SiteRule:
     name: str
     url_pattern: str
-    pagination: Optional[SelectorRule] = None
     page_list: SelectorRule
     detail_images: SelectorRule
+    pagination: Optional[SelectorRule] = None
     detail_videos: Optional[SelectorRule] = None
     next_button: Optional[SelectorRule] = None
     anti_crawl: AntiCrawlConfig = field(default_factory=AntiCrawlConfig)
