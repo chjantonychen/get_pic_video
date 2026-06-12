@@ -176,8 +176,11 @@ class MainWindow(QMainWindow):
     def _on_analyze(self):
         url = self.data_panel.url_input.text().strip()
         if url:
-            self._on_url_submitted(url)
+            self.data_panel.clear_pages()
+            self._pending_media = []
             self.browser_panel.webview.page().loadFinished.connect(self._delayed_crawl)
+            self.browser_panel.navigate(url)
+            self.bottom_bar.log_message(f"导航到: {url}")
         elif self._current_rule:
             self._run_crawl_now()
 
@@ -208,14 +211,14 @@ class MainWindow(QMainWindow):
     def _on_page_double_clicked(self, url: str):
         self.data_panel.clear_details()
         self._pending_media = []
+        self.browser_panel.webview.page().loadFinished.connect(self._delayed_crawl)
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"打开分页: {url}")
 
     def _on_detail_double_clicked(self, url: str):
         self.bottom_bar.log_message(f"分析详情: {url}")
+        self.browser_panel.webview.page().loadFinished.connect(self._delayed_extract_media)
         self.browser_panel.navigate(url)
-        if self._current_rule:
-            self.browser_panel.webview.page().loadFinished.connect(self._delayed_extract_media)
 
     def _delayed_extract_media(self, ok):
         try:
