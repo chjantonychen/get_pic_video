@@ -56,6 +56,7 @@ class DataPanel(QWidget):
         self.tabs.addTab(self._make_detail_tab(), "详情")
         self.tabs.addTab(self._make_media_tab("image"), "图片")
         self.tabs.addTab(self._make_media_tab("video"), "视频")
+        self.tabs.addTab(self._make_m3u8_tab(), "M3U8")
         detail_layout.addWidget(self.tabs)
 
         splitter.addWidget(page_container)
@@ -104,6 +105,27 @@ class DataPanel(QWidget):
         btn_clear.clicked.connect(lambda: (ml.clear(), count_label.setText("0 个文件")))
         btn_dl.clicked.connect(lambda: self._download_media_tab(media_type))
         return w
+
+    def _make_m3u8_tab(self):
+        w = QWidget()
+        l = QVBoxLayout(w)
+        l.setContentsMargins(0, 0, 0, 0)
+        self.m3u8_list = QListWidget()
+        l.addWidget(self.m3u8_list)
+        return w
+
+    def add_m3u8_task(self, task_id: str, title: str):
+        item = QListWidgetItem(f"[等待] {title[:50]}")
+        item.setData(256, task_id)
+        self.m3u8_list.insertItem(0, item)
+        return item
+
+    def update_m3u8_task(self, task_id: str, status: str, detail: str = ""):
+        for i in range(self.m3u8_list.count()):
+            item = self.m3u8_list.item(i)
+            if item.data(256) == task_id:
+                item.setText(f"[{status}] {detail[:80]}")
+                break
 
     def _download_media_tab(self, media_type):
         ml = getattr(self, f'_media_list_{media_type}')

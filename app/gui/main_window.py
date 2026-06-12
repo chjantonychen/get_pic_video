@@ -40,7 +40,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.bottom_bar, 0)
         self._crawler = Crawler(self.browser_panel.page())
         self._m3u8_handler = M3U8Handler(self._config.get("ffmpeg_path", "ffmpeg"),
-                                         log_callback=lambda msg: self._threadsafe_log(msg))
+                                         log_callback=lambda msg: self._threadsafe_log(msg),
+                                         progress_callback=self._on_m3u8_progress)
         self._downloader = Downloader(self._config, m3u8_handler=self._m3u8_handler)
         self._selector_picker = SelectorPicker(self.browser_panel.page())
         self._pending_media = []
@@ -363,12 +364,14 @@ class MainWindow(QMainWindow):
                 save_dir = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
                 folder = os.path.join(save_dir, title)
                 os.makedirs(folder, exist_ok=True)
-                for item in m3u8_items:
+                for i, item in enumerate(m3u8_items):
                     url = item.get("url","")
                     if url:
+                        task_id = f"m3u8_{id(url)}"
+                        self.data_panel.add_m3u8_task(task_id, title)
                         self.bottom_bar.log_message(f"下载M3U8: {url[:60]}")
                         import threading
-                        threading.Thread(target=self._download_m3u8, args=(url, title, folder), daemon=True).start()
+                        threading.Thread(target=self._download_m3u8, args=(url, title, folder, task_id), daemon=True).start()
             if all_items:
                 self._pending_media = [item for item in all_items if '.m3u8' not in item.get("url","").lower()]
                 self.bottom_bar.set_pending_count(len(self._pending_media))
@@ -386,12 +389,25 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.bottom_bar.log_message(f"JS结果解析错误: {e}")
 
-    def _download_m3u8(self, url, title, folder):
+    def _download_m3u8(self, url, title, folder, task_id=""):
         try:
-            mp4 = self._m3u8_handler.download_and_convert(url, os.path.join(folder, f"{title}.mp4"))
-            self._logSignal.emit(f"M3U8完成: {mp4}")
+            self._m3u8_handler.download_and_convert(url, os.path.join(folder, f"{title}.mp4"), task_id=task_id)
+            self._logSignal.emit(f"M3U8完成: {title}")
         except Exception as e:
             self._logSignal.emit(f"M3U8失败: {e}")
+
+    def _on_m3u8_progress(self, task_id, stage, ts_total=0, ts_done=0, detail=""):
+        if stage == "parsing":
+            self.data_panel.update_m3u8_task(task_id, "解析", detail or f"共 {ts_total} 个TS")
+        elif stage == "downloading":
+            pct = f"{ts_done}/{ts_total}" if ts_total else ""
+            self.data_panel.update_m3u8_task(task_id, f"下载 {pct}", detail)
+        elif stage == "converting":
+            self.data_panel.update_m3u8_task(task_id, "合成MP4", detail)
+        elif stage == "done":
+            self.data_panel.update_m3u8_task(task_id, "完成", detail or "完成")
+        elif stage == "error":
+            self.data_panel.update_m3u8_task(task_id, "失败", detail)
 
     def _start_download(self):
         if self._downloader.is_paused:
