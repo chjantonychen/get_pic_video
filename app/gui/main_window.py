@@ -283,39 +283,47 @@ class MainWindow(QMainWindow):
             pass
         if not ok or not self._current_rule:
             return
+        self.bottom_bar.log_message("提取媒体文件...")
+        self._media_extract_attempt = 0
+        self._media_extract()
+
+    def _media_extract(self):
+        if not self._current_rule or self._media_extract_attempt >= 4:
+            return
+        self._media_extract_attempt += 1
+        from PyQt5.QtCore import QTimer
         r = self._current_rule
         di = r.get("detail_images")
-        css = di.get("css", "img") if di else "img"
-        attr = di.get("attribute", "src") if di else "src"
-        self.bottom_bar.log_message(f"提取: CSS={css} attr={attr}")
-        self._extract_media_retry(css, attr, 0)
-
-    def _extract_media_retry(self, css, attr, attempt):
-        if attempt >= 6:
-            return
-        from PyQt5.QtCore import QTimer
-        self.bottom_bar.log_message(f"提取尝试 #{attempt+1}: CSS={css} attr={attr}")
-        js = f"""
-(function() {{
-  function searchDoc(doc) {{
-    var results = [];
-    Array.from(doc.querySelectorAll({json.dumps(css)})).forEach(function(el) {{
-      var url = el.getAttribute({json.dumps(attr)}) || el.src || '';
-      if (url) results.push({{url: url, type: 'image'}});
-    }});
-    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {{
-      try {{ if (f.contentDocument) results = results.concat(searchDoc(f.contentDocument)); }} catch(e) {{}}
-    }});
-    return results;
-  }}
-  var all = searchDoc(document);
-  document.title = '__media:' + encodeURIComponent(JSON.stringify({{count: all.length, all: all, attempt: {attempt}}}));
-}})();
+        dv = r.get("detail_videos")
+        js = """
+(function() {
+  function searchDoc(d) {
+    var r = [];
+    function add(el, type) {
+      var u = el.getAttribute('src') || el.getAttribute('data-src') || el.href || el.src || '';
+      if (u) r.push({url: u, type: type});
+    }
+    Array.from(d.querySelectorAll('img[src]')).forEach(function(el) { add(el, 'image'); });
+    Array.from(d.querySelectorAll('video[src]')).forEach(function(el) { add(el, 'video'); });
+    Array.from(d.querySelectorAll('source[src]')).forEach(function(el) { add(el, 'video'); });
 """
+        if di:
+            js += f"Array.from(d.querySelectorAll({json.dumps(di['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(di['attribute'])})||el.src||'';if(u)r.push({{url:u,type:'image'}});}});"
+        if dv:
+            js += f"Array.from(d.querySelectorAll({json.dumps(dv['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(dv['attribute'])})||el.src||'';if(u)r.push({{url:u,type:'video'}});}});"
+        js += """
+    Array.from(d.querySelectorAll('iframe')).forEach(function(f) {
+      try { if (f.contentDocument) r = r.concat(searchDoc(f.contentDocument)); } catch(e) {}
+    });
+    return r;
+  }
+  var all = searchDoc(document);
+  document.title = '__media:' + encodeURIComponent(JSON.stringify({count: all.length, all: all, attempt: MEDIA_ATTEMPT}));
+})();
+"""
+        js = js.replace("MEDIA_ATTEMPT", str(self._media_extract_attempt))
         self.browser_panel.webview.page().runJavaScript(js)
-        if attempt < 2:
-            delay = 2000 * (attempt + 1)
-            QTimer.singleShot(delay, lambda: self._extract_media_retry(css, attr, attempt + 1))
+        QTimer.singleShot(3000, self._media_extract)
 
     def _start_download(self):
         if self._downloader.is_paused:
