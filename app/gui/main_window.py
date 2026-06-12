@@ -335,40 +335,47 @@ class MainWindow(QMainWindow):
         self._auto_stopped = False
         self._auto_page_idx = 0
         self._auto_pages = pages
-        self._auto_detail_urls = []
+        self._auto_all_details = []  # Collect all detail URLs in phase 1
         self._auto_detail_idx = 0
         self._auto_save_base = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
         self.data_panel.clear_details()
-        self.bottom_bar.log_message(f"自动下载: 遍历 {len(pages)} 个分页...")
-        self._auto_next_page()
+        self.bottom_bar.log_message(f"阶段1/2: 遍历 {len(pages)} 个分页收集详情...")
+        self._auto_page_collect()
 
-    def _auto_next_page(self):
-        if self._auto_stopped: self._auto_finish("已停止"); return
-        if self._auto_paused: return self._auto_retry(lambda: self._auto_next_page())
+    def _auto_page_collect(self):
+        """Phase 1: Collect all detail URLs from all pagination pages"""
+        if self._auto_stopped: return self._auto_finish("已停止")
+        if self._auto_paused: return self._auto_retry(self._auto_page_collect)
         if self._auto_page_idx >= len(self._auto_pages):
-            return self._auto_finish("全部完成")
+            total = len(self._auto_all_details)
+            self.bottom_bar.log_message(f"阶段1完成: 收集到 {total} 个详情链接")
+            if total == 0:
+                return self._auto_finish("无详情链接")
+            self.bottom_bar.log_message("阶段2/2: 开始下载...")
+            self._auto_detail_idx = 0
+            self.bottom_bar.update_progress(0, total)
+            return self._auto_retry(self._auto_download_next)
         url = self._auto_pages[self._auto_page_idx]
-        self.bottom_bar.log_message(f"分页 [{self._auto_page_idx+1}/{len(self._auto_pages)}]: {url[:50]}")
-        self.browser_panel.webview.page().loadFinished.connect(self._auto_on_page_loaded)
+        self.bottom_bar.log_message(f"收集分页 [{self._auto_page_idx+1}/{len(self._auto_pages)}]")
+        self.browser_panel.webview.page().loadFinished.connect(self._auto_on_collect_loaded)
         self.browser_panel.navigate(url)
 
-    def _auto_on_page_loaded(self, ok):
+    def _auto_on_collect_loaded(self, ok):
         try:
-            self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_page_loaded)
+            self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_collect_loaded)
         except TypeError:
             pass
         if self._auto_stopped: return
         if not ok:
             self._auto_page_idx += 1
-            self._auto_next_page()
-            return
+            return self._auto_retry(self._auto_page_collect)
         from PyQt5.QtCore import QTimer
-        QTimer.singleShot(3000, self._auto_extract_details)
+        QTimer.singleShot(3000, self._auto_extract_and_store)
 
-    def _auto_extract_details(self):
+    def _auto_extract_and_store(self):
         if self._auto_stopped or not self._current_rule:
             self._auto_page_idx += 1
-            return self._auto_retry(self._auto_next_page)
+            return self._auto_retry(self._auto_page_collect)
         from app.models import SelectorRule, SiteRule
         r = self._current_rule
         rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern",""),
@@ -384,34 +391,34 @@ class MainWindow(QMainWindow):
             if url:
                 self.data_panel.add_detail_item(text, url)
         self.bottom_bar.log_message(f"找到 {len(links)} 个详情链接")
-        if hasattr(self, '_auto_page_idx'):
-            self._auto_detail_urls = [self._resolve_url(l.get("url","")) for l in links if l.get("url")]
-            self._auto_detail_idx = 0
-            self._auto_process_detail_page()
-
-    def _auto_process_detail_page(self):
-        if self._auto_stopped: return self._auto_finish("已停止")
-        if self._auto_paused: return self._auto_retry(self._auto_process_detail_page)
-        if self._auto_detail_idx >= len(self._auto_detail_urls):
-            self._auto_detail_urls = []
+        if hasattr(self, '_auto_all_details'):
+            # Phase 1: store and continue collecting
+            for l in links:
+                u = self._resolve_url(l.get("url",""))
+                if u: self._auto_all_details.append(u)
             self._auto_page_idx += 1
-            self.bottom_bar.update_progress(self._auto_page_idx, len(self._auto_pages))
-            return self._auto_retry(self._auto_next_page)
-        url = self._auto_detail_urls[self._auto_detail_idx]
-        self.bottom_bar.log_message(f"详情 [{self._auto_detail_idx+1}/{len(self._auto_detail_urls)}]")
-        self.browser_panel.webview.page().loadFinished.connect(self._auto_on_detail_loaded)
+            self._auto_retry(self._auto_page_collect)
+
+    def _auto_download_next(self):
+        """Phase 2: Download each detail page"""
+        if self._auto_stopped: return self._auto_finish("已停止")
+        if self._auto_paused: return self._auto_retry(self._auto_download_next)
+        if self._auto_detail_idx >= len(self._auto_all_details):
+            return self._auto_finish("全部完成")
+        url = self._auto_all_details[self._auto_detail_idx]
+        self.bottom_bar.log_message(f"下载 [{self._auto_detail_idx+1}/{len(self._auto_all_details)}]")
+        self.browser_panel.webview.page().loadFinished.connect(self._auto_on_dl_loaded)
         self.browser_panel.navigate(url)
 
-    def _auto_on_detail_loaded(self, ok):
+    def _auto_on_dl_loaded(self, ok):
         try:
-            self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_detail_loaded)
+            self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_dl_loaded)
         except TypeError:
             pass
         if self._auto_stopped: return
         if not ok:
             self._auto_detail_idx += 1
-            return self._auto_retry(self._auto_process_detail_page)
-        # Get title, then extract media
+            return self._auto_retry(self._auto_download_next)
         self.browser_panel.webview.page().runJavaScript("document.title", self._auto_on_got_title)
 
     def _auto_on_got_title(self, title):
@@ -424,12 +431,12 @@ class MainWindow(QMainWindow):
     def _auto_extract_media(self):
         if self._auto_stopped or not self._current_rule:
             self._auto_detail_idx += 1
-            return self._auto_retry(self._auto_process_detail_page)
+            return self._auto_retry(self._auto_download_next)
         r = self._current_rule
         di = r.get("detail_images")
         if not di:
             self._auto_detail_idx += 1
-            return self._auto_retry(self._auto_process_detail_page)
+            return self._auto_retry(self._auto_download_next)
         css = di.get("css","img"); attr = di.get("attribute","src")
         js = f"""
 (function() {{
@@ -453,7 +460,7 @@ class MainWindow(QMainWindow):
     def _auto_finish(self, msg):
         self.bottom_bar.log_message(f"自动下载: {msg}")
         self.bottom_bar.update_progress(0, 1)
-        for a in ['_auto_pages','_auto_page_idx','_auto_paused','_auto_stopped','_auto_detail_urls','_auto_detail_idx','_auto_cur_title','_auto_save_base']:
+        for a in ['_auto_pages','_auto_page_idx','_auto_paused','_auto_stopped','_auto_all_details','_auto_detail_idx','_auto_cur_title','_auto_save_base']:
             if hasattr(self, a): delattr(self, a)
 
     def _auto_retry(self, fn):
@@ -464,7 +471,7 @@ class MainWindow(QMainWindow):
         self._auto_paused = not getattr(self, '_auto_paused', False)
         self.bottom_bar.log_message("已暂停" if self._auto_paused else "已恢复")
         if not self._auto_paused:
-            self._auto_retry(self._auto_next_page)
+            self._auto_retry(self._auto_page_collect if hasattr(self, '_auto_all_details') and self._auto_detail_idx == 0 else self._auto_download_next)
 
     def _stop_auto_download(self):
         self._auto_stopped = True
@@ -566,8 +573,9 @@ class MainWindow(QMainWindow):
                     self.bottom_bar.log_message(f"下载 {len(urls)} 个文件到 {self._auto_cur_title}")
                     self._downloader.start([{"url": u, "type": "image"} for u in urls], folder)
                 self._auto_detail_idx = idx + 1
+                self.bottom_bar.update_progress(self._auto_detail_idx, len(self._auto_all_details))
                 from PyQt5.QtCore import QTimer
-                QTimer.singleShot(500, self._auto_process_detail_page)
+                QTimer.singleShot(500, self._auto_download_next)
             except:
                 pass
 
