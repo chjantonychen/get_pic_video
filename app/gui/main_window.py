@@ -559,6 +559,11 @@ class MainWindow(QMainWindow):
         self._pending_media.extend(media)
         self.bottom_bar.set_pending_count(len(self._pending_media))
         self.bottom_bar.log_message(f"找到 {len(media)} 个媒体文件，累计 {len(self._pending_media)} 个")
+        for m in media:
+            url = m.get("url", "")
+            t = m.get("type", "image")
+            if url:
+                self.data_panel.add_media_item(t, url)
 
     def _on_page_title_changed(self, title):
         if title.startswith("__media:"):
@@ -569,11 +574,13 @@ class MainWindow(QMainWindow):
                     all_items = data.get("all", [])
                     attempt = data.get("attempt", 0)
                     if count > 0:
-                        self._pending_media = all_items  # Replace (retries resend all)
+                        self._pending_media = all_items
                         self.bottom_bar.set_pending_count(len(self._pending_media))
                         self.bottom_bar.log_message(f"提取成功 (尝试#{attempt+1}): {count} 个媒体文件")
                         for item in all_items[:3]:
                             self.bottom_bar.log_message(f"  → {item.get('url','')[:80]}")
+                        for item in all_items:
+                            self.data_panel.add_media_item(item.get("type", "image"), item.get("url",""))
                     else:
                         self.bottom_bar.log_message(f"提取尝试#{attempt+1}: 未找到元素")
                 elif isinstance(data, list):
