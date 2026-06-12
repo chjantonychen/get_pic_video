@@ -218,17 +218,21 @@ class MainWindow(QMainWindow):
         r = self._current_rule
         di = r.get("detail_images")
         dv = r.get("detail_videos")
-        js = "var all=[];"
+        js = """
+function searchDoc(doc, css, attr, type) {
+  var r = [];
+  doc.querySelectorAll(css).forEach(function(el) { r.push({url: el.getAttribute(attr)||el.src, type: type}); });
+  doc.querySelectorAll("iframe").forEach(function(f) {
+    try { if (f.contentDocument) r = r.concat(searchDoc(f.contentDocument, css, attr, type)); } catch(e) {}
+  });
+  return r;
+}
+var all = [];
+"""
         if di:
-            js += f"""
-try {{ var els = document.querySelectorAll({json.dumps(di['css'])});
-els.forEach(function(el){{ all.push({{url:el.getAttribute({json.dumps(di['attribute'])})||el.src, type:'image'}}); }}); }} catch(e){{}}
-"""
+            js += f"all = all.concat(searchDoc(document, {json.dumps(di['css'])}, {json.dumps(di['attribute'])}, 'image'));"
         if dv:
-            js += f"""
-try {{ var els = document.querySelectorAll({json.dumps(dv['css'])});
-els.forEach(function(el){{ all.push({{url:el.getAttribute({json.dumps(dv['attribute'])})||el.src, type:'video'}}); }}); }} catch(e){{}}
-"""
+            js += f"all = all.concat(searchDoc(document, {json.dumps(dv['css'])}, {json.dumps(dv['attribute'])}, 'video'));"
         js += "document.title='__media:'+encodeURIComponent(JSON.stringify(all));"
         self.browser_panel.webview.page().runJavaScript(js)
 
