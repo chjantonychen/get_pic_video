@@ -201,7 +201,7 @@ class MainWindow(QMainWindow):
             self._run_crawl_all()
 
     def _run_crawl_all(self):
-        """抽取分页链接（→上表）+ 详情链接（→下表）"""
+        """只提取分页链接（→上表），不提取详情"""
         if not self._current_rule:
             return
         from app.models import SelectorRule, SiteRule
@@ -216,8 +216,9 @@ class MainWindow(QMainWindow):
         if rule.pagination:
             self.bottom_bar.log_message("提取分页链接...")
             self._crawler.extract_pagination(rule)
-        self.bottom_bar.log_message("提取详情链接...")
-        self._crawler.extract_detail_links(rule)
+        else:
+            self.bottom_bar.log_message("没有分页规则，尝试提取详情链接...")
+            self._crawler.extract_detail_links(rule)
 
     def _run_crawl_detail(self):
         """只提取详情链接（→下表），双击分页时用"""
