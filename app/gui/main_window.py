@@ -177,6 +177,17 @@ class MainWindow(QMainWindow):
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"导航到: {url}")
 
+    def _resolve_url(self, url: str) -> str:
+        if url.startswith(("http://", "https://")):
+            return url
+        if url.startswith("//"):
+            return "https:" + url
+        if url.startswith("/"):
+            page = self.browser_panel.webview.url().toString()
+            parsed = urllib.parse.urlparse(page)
+            return f"{parsed.scheme}://{parsed.netloc}{url}"
+        return url
+
     def _on_analyze(self):
         url = self.data_panel.url_input.text().strip()
         if url:
@@ -319,17 +330,6 @@ class MainWindow(QMainWindow):
             from urllib.parse import urlparse
             domain = urlparse(samples[0]).netloc or "unknown"
             import re
-
-    def _resolve_url(self, url: str) -> str:
-        if url.startswith(("http://", "https://")):
-            return url
-        if url.startswith("//"):
-            return "https:" + url
-        if url.startswith("/"):
-            page = self.browser_panel.webview.url().toString()
-            parsed = urllib.parse.urlparse(page)
-            return f"{parsed.scheme}://{parsed.netloc}{url}"
-        return url
             # Generate URL pattern from sample
             sample = samples[0]
             pattern = re.sub(r"/\d+", r"/\\d+", sample)
