@@ -1,4 +1,4 @@
-import os, json, urllib.parse
+import json, urllib.parse
 from PyQt5.QtCore import QObject, pyqtSignal
 
 PICKER_JS = """
@@ -18,25 +18,36 @@ PICKER_JS = """
     }
     return p.join(" > ");
   }
-  var style = document.createElement("style");
-  style.id = "getiv-picker-style";
-  style.textContent = "*:hover { outline: 3px solid #2196F3 !important; outline-offset: 2px !important; }";
-  document.head.appendChild(style);
-  window.__disablePicker = function() {
-    var s = document.getElementById("getiv-picker-style");
-    if (s) s.remove();
-  };
-  window.__validateSelector = function(css) {
-    document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; });
-    var els = document.querySelectorAll(css);
-    els.forEach(function(el) { el.style.outline = "3px solid #4CAF50"; el.style.outlineOffset = "2px"; });
-    return els.length;
-  };
-  document.addEventListener("click", function __pick(e) {
+  var lastEl = null;
+  function onHover(e) {
+    if (lastEl) { lastEl.style.outline = ""; lastEl.style.background = ""; }
+    e.target.style.outline = "3px solid #2196F3";
+    e.target.style.outlineOffset = "2px";
+    e.target.style.background = "rgba(33,150,243,0.15)";
+    lastEl = e.target;
+  }
+  function onOut(e) { e.target.style.outline = ""; e.target.style.background = ""; }
+  function onClick(e) {
     e.preventDefault(); e.stopPropagation();
     document.title = "__pick:" + encodeURIComponent(getSelector(e.target));
-    document.removeEventListener("click", __pick, true);
-  }, true);
+  }
+  document.addEventListener("mouseover", onHover, true);
+  document.addEventListener("mouseout", onOut, true);
+  document.addEventListener("click", onClick, true);
+  window.__disablePicker = function() {
+    document.removeEventListener("mouseover", onHover, true);
+    document.removeEventListener("mouseout", onOut, true);
+    document.removeEventListener("click", onClick, true);
+    document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
+  };
+  window.__validateSelector = function(css) {
+    document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
+    var els = document.querySelectorAll(css);
+    if (els.length === 0) { document.title = "验证失败: 未找到匹配元素"; return 0; }
+    els.forEach(function(el) { el.style.outline = "3px solid #4CAF50"; el.style.outlineOffset = "2px"; });
+    document.title = "__validate:" + els.length;
+    return els.length;
+  };
 })();
 """
 
@@ -71,4 +82,6 @@ class SelectorPicker(QObject):
         self._page.runJavaScript(f"__validateSelector({safe_css})", callback)
 
     def clear_highlights(self):
-        self._page.runJavaScript("""document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; });""")
+        self._page.runJavaScript("""
+document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
+""")
