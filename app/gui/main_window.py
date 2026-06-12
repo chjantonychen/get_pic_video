@@ -19,6 +19,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self._config = load_config()
         self._current_rule = None
+        self._picked_selectors = {}
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
 
     def _start_new_rule(self):
         self._current_rule = None
+        self._picked_selectors = {}
         self.data_panel.clear_pages()
         self.data_panel.clear_details()
         self.data_panel.rule_selector.setCurrentIndex(0)
@@ -88,11 +90,42 @@ class MainWindow(QMainWindow):
             self._selector_picker.enable()
         else:
             self._selector_picker.disable()
+            if self._picked_selectors:
+                self._save_rule_from_picks()
+
+    def _save_rule_from_picks(self):
+        from app.models import SiteRule, SelectorRule
+        type_map = {
+            "分页链接": "pagination", "详情链接": "page_list",
+            "图片容器": "detail_images", "视频容器": "detail_videos",
+            "下一页按钮": "next_button"
+        }
+        kwargs = {"name": f"规则_{len(self._config['rules']) + 1}", "url_pattern": "", "anti_crawl": None}
+        for label, picks in self._picked_selectors.items():
+            field = type_map.get(label)
+            if field and picks:
+                css = picks[0]["css"]
+                attr = picks[0]["attribute"]
+                kwargs[field] = SelectorRule(css=css, attribute=attr)
+        try:
+            rule = SiteRule(**kwargs)
+            self._config["rules"].append(rule.__dict__)
+            save_config(self._config)
+            self.data_panel.rule_selector.addItem(rule.name)
+            self.bottom_bar.log_message(f"规则已保存: {rule.name}")
+            self._picked_selectors = {}
+        except Exception as e:
+            self.bottom_bar.log_message(f"保存规则失败: {e}")
 
     def _on_element_picked(self, selector: str):
         dlg = TypeSelectorDialog(selector, self)
         if dlg.exec_() and dlg.selected_type:
-            self.bottom_bar.log_message(f"已标注 [{dlg.selected_type}]: {selector}")
+            t = dlg.selected_type
+            attr = dlg.selected_attribute or "src"
+            self.bottom_bar.log_message(f"已标注 [{t}]: {selector} (attr={attr})")
+            if t not in self._picked_selectors:
+                self._picked_selectors[t] = []
+            self._picked_selectors[t].append({"css": selector, "attribute": attr})
             self._selector_picker.validate_selector(selector,
                 lambda count: self.bottom_bar.log_message(f"选择器匹配到 {count} 个元素"))
         else:
