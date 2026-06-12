@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
         self.data_panel.btn_analyze.clicked.connect(self._on_analyze)
         self.data_panel.pageDoubleClicked.connect(self._on_page_double_clicked)
         self.data_panel.detailDoubleClicked.connect(self._on_detail_double_clicked)
+        self._crawler.paginationFound.connect(self._on_pagination_found)
         self._crawler.linksFound.connect(self._on_detail_links_found)
         self._crawler.mediaFound.connect(self._on_media_found)
         self._downloader.progressUpdated.connect(self._on_download_progress)
@@ -169,6 +170,7 @@ class MainWindow(QMainWindow):
 
     def _on_url_submitted(self, url: str):
         self.data_panel.clear_pages()
+        self.data_panel.clear_details()
         self._pending_media = []
         self.bottom_bar.set_pending_count(0)
         self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
@@ -179,13 +181,14 @@ class MainWindow(QMainWindow):
         url = self.data_panel.url_input.text().strip()
         if url:
             self.data_panel.clear_pages()
+            self.data_panel.clear_details()
             self._pending_media = []
             self.bottom_bar.set_pending_count(0)
             self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
             self.browser_panel.navigate(url)
             self.bottom_bar.log_message(f"导航到: {url}")
         elif self._current_rule:
-            self._run_crawl_now()
+            self._run_crawl_detail()
 
     def _delayed_auto_analyze(self, ok):
         try:
@@ -195,103 +198,57 @@ class MainWindow(QMainWindow):
         if not ok:
             return
         if self._current_rule:
-            self._run_crawl_now()
-        elif not self._picked_selectors:
-            self._auto_analyze_page()
+            self._run_crawl_all()
 
-    def _auto_analyze_page(self):
-        """自动分析页面结构，生成规则"""
-        self._auto_analyze_retries = 0
-        self._run_auto_analyze()
-
-    def _run_auto_analyze(self):
-        js = """
-(function() {
-  function countLinks(doc, depth) {
-    var total = 0;
-    Array.from(doc.querySelectorAll('a[href]')).forEach(function(a) { total++; });
-    var iframes = 0;
-    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {
-      iframes++;
-      try { if (f.contentDocument) total += countLinks(f.contentDocument, depth+1); } catch(e) {}
-    });
-    return {total: total, iframes: iframes};
-  }
-  var mainCount = countLinks(document, 0);
-  console.log('GetIv auto-analyze: mainLinks=' + mainCount.total + ' iframes=' + mainCount.iframes);
-  function searchLinks(doc) {
-    var all = [];
-    var imgs = [];
-    Array.from(doc.querySelectorAll('a[href]')).forEach(function(a) {
-      var h = a.href.split('?')[0].split('#')[0];
-      if (h && !h.endsWith('/')) all.push({href: h, text: (a.textContent||'').trim()});
-    });
-    Array.from(doc.querySelectorAll('img[src]')).forEach(function(img) {
-      imgs.push({src: img.src, alt: (img.alt||'').trim()});
-    });
-    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {
-      try { if (f.contentDocument) { var r = searchLinks(f.contentDocument); all = all.concat(r.all); imgs = imgs.concat(r.imgs); } } catch(e) {}
-    });
-    return {all: all, imgs: imgs};
-  }
-  var data = searchLinks(document);
-  var groups = {};
-  data.all.forEach(function(l) {
-    var parts = l.href.split('/');
-    var key = parts.slice(0, -1).join('/') + '/';
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(l.href);
-  });
-  var best = {key: '', count: 0, samples: []};
-  for (var k in groups) {
-    if (groups[k].length > best.count) {
-      best = {key: k, count: groups[k].length, samples: groups[k].slice(0, 3)};
-    }
-  }
-  document.title = '__auto:' + encodeURIComponent(JSON.stringify({
-    totalLinks: data.all.length,
-    totalImgs: data.imgs.length,
-    bestGroup: best
-  }));
-})();
-"""
-        self.browser_panel.webview.page().runJavaScript(js)
-        # Retry after 3s for dynamic iframe content
-        from PyQt5.QtCore import QTimer
-        self._auto_analyze_retries = getattr(self, '_auto_analyze_retries', 0) + 1
-        if self._auto_analyze_retries <= 2:
-            QTimer.singleShot(3000, self._run_auto_analyze)
-
-    def _delayed_crawl(self, ok):
-        if ok and self._current_rule:
-            self._run_crawl_now()
-        # Disconnect after first fire to prevent stacking
-        try:
-            self.browser_panel.webview.page().loadFinished.disconnect(self._delayed_crawl)
-        except TypeError:
-            pass
-
-    def _run_crawl_now(self):
+    def _run_crawl_all(self):
+        """抽取分页链接（→上表）+ 详情链接（→下表）"""
         if not self._current_rule:
             return
-        self.bottom_bar.log_message("开始分析页面...")
         from app.models import SelectorRule, SiteRule
         def sr(d):
-            return SelectorRule(css=d.get("css", ""), attribute=d.get("attribute", "href"),
-                                url_pattern=d.get("url_pattern", "")) if d else None
+            return SelectorRule(css=d.get("css",""), attribute=d.get("attribute","href"),
+                                url_pattern=d.get("url_pattern","")) if d else None
         r = self._current_rule
-        rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern", ""),
+        rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern",""),
                         page_list=sr(r["page_list"]), detail_images=sr(r["detail_images"]),
                         pagination=sr(r.get("pagination")), detail_videos=sr(r.get("detail_videos")),
                         next_button=sr(r.get("next_button")))
+        if rule.pagination:
+            self.bottom_bar.log_message("提取分页链接...")
+            self._crawler.extract_pagination(rule)
+        self.bottom_bar.log_message("提取详情链接...")
+        self._crawler.extract_detail_links(rule)
+
+    def _run_crawl_detail(self):
+        """只提取详情链接（→下表），双击分页时用"""
+        if not self._current_rule:
+            return
+        from app.models import SelectorRule, SiteRule
+        def sr(d):
+            return SelectorRule(css=d.get("css",""), attribute=d.get("attribute","href"),
+                                url_pattern=d.get("url_pattern","")) if d else None
+        r = self._current_rule
+        rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern",""),
+                        page_list=sr(r["page_list"]), detail_images=sr(r["detail_images"]),
+                        pagination=sr(r.get("pagination")), detail_videos=sr(r.get("detail_videos")),
+                        next_button=sr(r.get("next_button")))
+        self.bottom_bar.log_message("提取详情链接...")
         self._crawler.extract_detail_links(rule)
 
     def _on_page_double_clicked(self, url: str):
         self.data_panel.clear_details()
         self._pending_media = []
-        self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
+        self.browser_panel.webview.page().loadFinished.connect(self._delayed_crawl_detail)
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"打开分页: {url}")
+
+    def _delayed_crawl_detail(self, ok):
+        try:
+            self.browser_panel.webview.page().loadFinished.disconnect(self._delayed_crawl_detail)
+        except TypeError:
+            pass
+        if ok and self._current_rule:
+            self._run_crawl_detail()
 
     def _on_detail_double_clicked(self, url: str):
         self.bottom_bar.log_message(f"分析详情: {url}")
@@ -391,9 +348,17 @@ class MainWindow(QMainWindow):
             self.bottom_bar.log_message(f"自动分析: 检测到 {data.get('totalLinks',0)} 个链接，已创建规则「{domain}」")
             self.bottom_bar.log_message(f"URL模式: {pattern[:80]}")
             # Run crawl with the new rule
-            self._run_crawl_now()
+            self._run_crawl_all()
         except Exception as e:
             self.bottom_bar.log_message(f"自动分析失败: {e}")
+
+    def _on_pagination_found(self, links):
+        for link in links:
+            url = link.get("url") or ""
+            text = link.get("text") or url
+            if url:
+                self.data_panel.add_page_item(text, url)
+        self.bottom_bar.log_message(f"分页: 找到 {sum(1 for l in links if l.get('url'))} 个分页链接")
 
     def _on_detail_links_found(self, links):
         for link in links:

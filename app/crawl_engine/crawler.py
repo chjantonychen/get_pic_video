@@ -5,6 +5,7 @@ from app.crawl_engine.js_injector import JSInjector
 from app.models import SiteRule
 
 class Crawler(QObject):
+    paginationFound = pyqtSignal(list)
     linksFound = pyqtSignal(list)
     mediaFound = pyqtSignal(list)
     pageCount = pyqtSignal(int)
@@ -31,7 +32,7 @@ class Crawler(QObject):
             js = self._js.build_extract_links_by_pattern_js(sr.url_pattern)
         else:
             js = self._js.build_extract_links_js(sr.css, sr.attribute)
-        self._page.runJavaScript(js, self.linksFound.emit)
+        self._page.runJavaScript(js, self.paginationFound.emit)
 
     def extract_media(self, rule: SiteRule, media_type: str = "image"):
         sr = rule.detail_images if media_type == "image" else rule.detail_videos
