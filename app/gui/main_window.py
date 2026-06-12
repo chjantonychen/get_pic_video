@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction, QApplication
-from PyQt5.QtCore import QUrl
+from PyQt5.QtCore import QUrl, pyqtSignal
 import json, urllib.parse, os
 from app.gui.browser_panel import BrowserPanel
 from app.gui.data_panel import DataPanel
@@ -14,6 +14,8 @@ from app.rule_builder.selector_picker import SelectorPicker
 from app.rule_builder.type_selector_dialog import TypeSelectorDialog
 
 class MainWindow(QMainWindow):
+    _logSignal = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("GetIv - 网站媒体下载器")
@@ -34,6 +36,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([600, 600])
         layout.addWidget(splitter, 1)
         self.bottom_bar = BottomBar()
+        self._logSignal.connect(self.bottom_bar.log_message)
         layout.addWidget(self.bottom_bar, 0)
         self._crawler = Crawler(self.browser_panel.page())
         self._m3u8_handler = M3U8Handler(self._config.get("ffmpeg_path", "ffmpeg"),
@@ -271,8 +274,7 @@ class MainWindow(QMainWindow):
             self._run_crawl_detail()
 
     def _threadsafe_log(self, msg):
-        from PyQt5.QtCore import QTimer
-        QTimer.singleShot(0, lambda: self.bottom_bar.log_message(msg))
+        self._logSignal.emit(msg)
 
     def _on_detail_double_clicked(self, url: str):
         self.bottom_bar.log_message(f"分析详情: {url}")
@@ -385,12 +387,11 @@ class MainWindow(QMainWindow):
             self.bottom_bar.log_message(f"JS结果解析错误: {e}")
 
     def _download_m3u8(self, url, title, folder):
-        from PyQt5.QtCore import QTimer
         try:
             mp4 = self._m3u8_handler.download_and_convert(url, os.path.join(folder, f"{title}.mp4"))
-            QTimer.singleShot(0, lambda: self.bottom_bar.log_message(f"M3U8完成: {mp4}"))
+            self._logSignal.emit(f"M3U8完成: {mp4}")
         except Exception as e:
-            QTimer.singleShot(0, lambda: self.bottom_bar.log_message(f"M3U8失败: {e}"))
+            self._logSignal.emit(f"M3U8失败: {e}")
 
     def _start_download(self):
         if self._downloader.is_paused:
