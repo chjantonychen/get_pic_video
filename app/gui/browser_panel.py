@@ -24,6 +24,8 @@ class BrowserPanel(QWidget):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "Chrome/120.0.0.0 Safari/537.36"
         )
+        # Allow loading mixed content (HTTP images on HTTPS pages)
+        profile.setHttpAcceptLanguage("zh-CN,zh;q=0.9,en;q=0.8")
         self.webview = QWebEngineView()
         s = self.webview.settings()
         s.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
@@ -35,6 +37,8 @@ class BrowserPanel(QWidget):
         s.setAttribute(QWebEngineSettings.FullScreenSupportEnabled, True)
         s.setAttribute(QWebEngineSettings.WebGLEnabled, True)
         s.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
+        s.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+        s.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
         self.webview.setUrl(QUrl("about:blank"))
         layout.addWidget(self.webview)
         self.btn_back.clicked.connect(self.webview.back)
