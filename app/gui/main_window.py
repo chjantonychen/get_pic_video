@@ -300,10 +300,19 @@ class MainWindow(QMainWindow):
         js = """
 (function() {
   var all = [];
-  function add(u, t) { if (u) all.push({url: u, type: t}); }
+  function add(u, t) { if (u && u.trim()) all.push({url: u.trim(), type: t}); }
   try { Array.from(document.querySelectorAll('img[src]')).forEach(function(el) { add(el.src, 'image'); }); } catch(e) {}
   try { Array.from(document.querySelectorAll('video[src]')).forEach(function(el) { add(el.src, 'video'); }); } catch(e) {}
   try { Array.from(document.querySelectorAll('source[src]')).forEach(function(el) { add(el.src, 'video'); }); } catch(e) {}
+  // Search entire page for m3u8 URLs
+  try {
+    var re = /https?:\\/\\/[^\\s'\"<>]+\\.m3u8[^\\s'\"<>]*/g;
+    var text = document.documentElement.outerHTML;
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      add(m[0], 'video');
+    }
+  } catch(e) {}
 """
         if di:
             js += f"try{{Array.from(document.querySelectorAll({json.dumps(di['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(di['attribute'])})||el.src||'';if(u)all.push({{url:u,type:'image'}});}});}}catch(e){{}}"
@@ -311,7 +320,16 @@ class MainWindow(QMainWindow):
             js += f"try{{Array.from(document.querySelectorAll({json.dumps(dv['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(dv['attribute'])})||el.src||'';if(u)all.push({{url:u,type:'video'}});}});}}catch(e){{}}"
         js += """
   try { Array.from(document.querySelectorAll('iframe')).forEach(function(f) {
-    try { if (f.contentDocument) Array.from(f.contentDocument.querySelectorAll('img[src],video[src],source[src]')).forEach(function(el) { var u=el.src||''; if(u) add(u, el.tagName==='IMG'?'image':'video'); }); } catch(e) {}
+    try { if (f.contentDocument) {
+      Array.from(f.contentDocument.querySelectorAll('img[src],video[src],source[src]')).forEach(function(el) { var u=el.src||''; if(u) add(u, el.tagName==='IMG'?'image':'video'); });
+      // Search iframe content for m3u8
+      var re = /https?:\\/\\/[^\\s'\"<>]+\\.m3u8[^\\s'\"<>]*/g;
+      var text = f.contentDocument.documentElement.outerHTML;
+      var m;
+      while ((m = re.exec(text)) !== null) {
+        if (all.every(function(item) { return item.url !== m[0]; })) add(m[0], 'video');
+      }
+    }} catch(e) {}
   }); } catch(e) {}
   return JSON.stringify({count: all.length, all: all});
 })();
