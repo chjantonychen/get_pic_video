@@ -9,9 +9,10 @@ class Downloader(QObject):
     downloadComplete = pyqtSignal()
     downloadError = pyqtSignal(str)
 
-    def __init__(self, config):
+    def __init__(self, config, m3u8_handler=None):
         super().__init__()
         self._config = config
+        self._m3u8_handler = m3u8_handler
         self._pool = None
         self._pause_event = threading.Event()
         self._cancel_event = threading.Event()
@@ -53,6 +54,15 @@ class Downloader(QObject):
                 self._pool.shutdown(wait=False)
 
     def _download_file(self, url: str, path: str):
+        if self._m3u8_handler and '.m3u8' in url.lower():
+            mp4_path = path.rsplit('.', 1)[0] + '.mp4' if not path.endswith('.mp4') else path
+            self._m3u8_handler.download_and_convert(url, mp4_path)
+            if os.path.exists(mp4_path) and path != mp4_path and os.path.exists(path):
+                os.remove(path)
+            return
+        self._http_download(url, path)
+
+    def _http_download(self, url: str, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         delay = self._config.get("delay_min", 1)
         delay_max = self._config.get("delay_max", 3)
