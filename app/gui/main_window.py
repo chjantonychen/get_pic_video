@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction
 from PyQt5.QtCore import QUrl
-import json, urllib.parse
+import json, urllib.parse, os
 from app.gui.browser_panel import BrowserPanel
 from app.gui.data_panel import DataPanel
 from app.gui.bottom_bar import BottomBar
