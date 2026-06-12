@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction, QShortcut
 from PyQt5.QtCore import QUrl, pyqtSignal
 from PyQt5.QtGui import QKeySequence
-import json, urllib.parse, os
+import json, urllib.parse, os, threading
 from app.gui.browser_panel import BrowserPanel
 from app.gui.data_panel import DataPanel
 from app.gui.bottom_bar import BottomBar
@@ -11,6 +11,7 @@ from app.download_engine.downloader import Downloader
 from app.download_engine.m3u8_handler import M3U8Handler
 from app.config import load_config, save_config
 from app.models import SiteRule, SelectorRule, DownloadProgress
+from app.util import safe_title, save_dir
 from app.rule_builder.selector_picker import SelectorPicker
 from app.rule_builder.type_selector_dialog import TypeSelectorDialog
 
@@ -48,6 +49,23 @@ class MainWindow(QMainWindow):
         self._selector_picker = SelectorPicker(self.browser_panel.page())
         self._pending_media = []
         self._load_rule_list()
+        self._connect_signals()
+        self.browser_panel.navigate("about:blank")
+
+        # Tooltips
+        self.data_panel.url_input.setToolTip("输入网址，Enter 或点击「分析」")
+        self.data_panel.btn_analyze.setToolTip("分析当前页面 (Ctrl+Enter)")
+        self.data_panel.btn_new_rule.setToolTip("创建新规则")
+        self.browser_panel.btn_pick.setToolTip("开启/关闭点选模式")
+        self.bottom_bar.btn_auto.setToolTip("自动遍历分页提取详情并下载")
+        self.bottom_bar.btn_download.setToolTip("下载已提取的媒体文件")
+        self.bottom_bar.btn_pause.setToolTip("暂停下载")
+        self.bottom_bar.btn_cancel.setToolTip("取消下载")
+
+        # Keyboard shortcuts
+        self._setup_shortcuts()
+
+    def _connect_signals(self):
         self.data_panel.urlSubmitted.connect(self._on_url_submitted)
         self.data_panel.btn_analyze.clicked.connect(self._on_analyze)
         self.data_panel.pageDoubleClicked.connect(self._on_page_double_clicked)
@@ -68,19 +86,8 @@ class MainWindow(QMainWindow):
         self.browser_panel.webview.page().titleChanged.connect(self._on_page_title_changed)
         self.data_panel.clearPagesRequested.connect(self.data_panel.clear_pages)
         self.data_panel.clearDetailsRequested.connect(self.data_panel.clear_details)
-        self.browser_panel.navigate("about:blank")
 
-        # Tooltips
-        self.data_panel.url_input.setToolTip("输入网址，Enter 或点击「分析」")
-        self.data_panel.btn_analyze.setToolTip("分析当前页面 (Ctrl+Enter)")
-        self.data_panel.btn_new_rule.setToolTip("创建新规则")
-        self.browser_panel.btn_pick.setToolTip("开启/关闭点选模式")
-        self.bottom_bar.btn_auto.setToolTip("自动遍历分页提取详情并下载")
-        self.bottom_bar.btn_download.setToolTip("下载已提取的媒体文件")
-        self.bottom_bar.btn_pause.setToolTip("暂停下载")
-        self.bottom_bar.btn_cancel.setToolTip("取消下载")
-
-        # Keyboard shortcuts
+    def _setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(
             lambda: self.data_panel.urlSubmitted.emit(self.data_panel.url_input.text()))
         QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(self._start_download)
@@ -88,6 +95,18 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self._stop_auto_download)
         QShortcut(QKeySequence("F5"), self).activated.connect(
             lambda: self.browser_panel.webview.reload())
+
+    def _disconnect_load(self, handler):
+        try:
+            self.browser_panel.webview.page().loadFinished.disconnect(handler)
+        except TypeError:
+            pass
+
+    def _reset_state(self):
+        self.data_panel.clear_pages()
+        self.data_panel.clear_details()
+        self._pending_media = []
+        self.bottom_bar.set_pending_count(0)
 
     def _build_menu(self):
         menubar = self.menuBar()
@@ -202,10 +221,7 @@ class MainWindow(QMainWindow):
             self.bottom_bar.log_message("元素标注取消")
 
     def _on_url_submitted(self, url: str):
-        self.data_panel.clear_pages()
-        self.data_panel.clear_details()
-        self._pending_media = []
-        self.bottom_bar.set_pending_count(0)
+        self._reset_state()
         self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"导航到: {url}")
@@ -224,10 +240,7 @@ class MainWindow(QMainWindow):
     def _on_analyze(self):
         url = self.data_panel.url_input.text().strip()
         if url:
-            self.data_panel.clear_pages()
-            self.data_panel.clear_details()
-            self._pending_media = []
-            self.bottom_bar.set_pending_count(0)
+            self._reset_state()
             self.browser_panel.webview.page().loadFinished.connect(self._delayed_auto_analyze)
             self.browser_panel.navigate(url)
             self.bottom_bar.log_message(f"导航到: {url}")
@@ -235,10 +248,7 @@ class MainWindow(QMainWindow):
             self._run_crawl_detail()
 
     def _delayed_auto_analyze(self, ok):
-        try:
-            self.browser_panel.webview.page().loadFinished.disconnect(self._delayed_auto_analyze)
-        except TypeError:
-            pass
+        self._disconnect_load(self._delayed_auto_analyze)
         if not ok:
             return
         if self._current_rule:
@@ -248,15 +258,7 @@ class MainWindow(QMainWindow):
         """只提取分页链接（→上表），不提取详情"""
         if not self._current_rule:
             return
-        from app.models import SelectorRule, SiteRule
-        def sr(d):
-            return SelectorRule(css=d.get("css",""), attribute=d.get("attribute","href"),
-                                url_pattern=d.get("url_pattern","")) if d else None
-        r = self._current_rule
-        rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern",""),
-                        page_list=sr(r["page_list"]), detail_images=sr(r["detail_images"]),
-                        pagination=sr(r.get("pagination")), detail_videos=sr(r.get("detail_videos")),
-                        next_button=sr(r.get("next_button")))
+        rule = SiteRule.from_config(self._current_rule)
         if rule.pagination:
             self.bottom_bar.log_message("提取分页链接...")
             self._crawler.extract_pagination(rule)
@@ -268,15 +270,7 @@ class MainWindow(QMainWindow):
         """只提取详情链接（→下表），双击分页时用"""
         if not self._current_rule:
             return
-        from app.models import SelectorRule, SiteRule
-        def sr(d):
-            return SelectorRule(css=d.get("css",""), attribute=d.get("attribute","href"),
-                                url_pattern=d.get("url_pattern","")) if d else None
-        r = self._current_rule
-        rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern",""),
-                        page_list=sr(r["page_list"]), detail_images=sr(r["detail_images"]),
-                        pagination=sr(r.get("pagination")), detail_videos=sr(r.get("detail_videos")),
-                        next_button=sr(r.get("next_button")))
+        rule = SiteRule.from_config(self._current_rule)
         self.bottom_bar.log_message("提取详情链接...")
         self._crawler.extract_detail_links(rule)
 
@@ -288,10 +282,7 @@ class MainWindow(QMainWindow):
         self.bottom_bar.log_message(f"打开分页: {url}")
 
     def _delayed_crawl_detail(self, ok):
-        try:
-            self.browser_panel.webview.page().loadFinished.disconnect(self._delayed_crawl_detail)
-        except TypeError:
-            pass
+        self._disconnect_load(self._delayed_crawl_detail)
         if ok and self._current_rule:
             self._run_crawl_detail()
 
@@ -306,10 +297,7 @@ class MainWindow(QMainWindow):
         self.browser_panel.navigate(url)
 
     def _delayed_extract_media(self, ok):
-        try:
-            self.browser_panel.webview.page().loadFinished.disconnect(self._delayed_extract_media)
-        except TypeError:
-            pass
+        self._disconnect_load(self._delayed_extract_media)
         if not ok or not self._current_rule:
             self.bottom_bar.log_message("提取跳过: 页面加载失败或无规则")
             return
@@ -322,7 +310,7 @@ class MainWindow(QMainWindow):
         self.browser_panel.webview.page().runJavaScript("document.title", self._on_got_title_for_dl)
 
     def _on_got_title_for_dl(self, title):
-        self._current_page_title = (title or "untitled").strip().replace('/','_').replace('\\','_')[:80]
+        self._current_page_title = safe_title(title)
         self.bottom_bar.log_message(f"页面标题: {self._current_page_title}")
         r = self._current_rule
         from PyQt5.QtCore import QTimer
@@ -381,9 +369,8 @@ class MainWindow(QMainWindow):
             if m3u8_items:
                 self.bottom_bar.log_message(f"发现 {len(m3u8_items)} 个M3U8视频，开始下载转换...")
                 title = getattr(self, '_current_page_title', f"video_{len(m3u8_items)}")
-                import os
-                save_dir = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
-                folder = os.path.join(save_dir, title)
+                base = save_dir(self._config)
+                folder = os.path.join(base, title)
                 os.makedirs(folder, exist_ok=True)
                 for i, item in enumerate(m3u8_items):
                     url = item.get("url","")
@@ -437,9 +424,8 @@ class MainWindow(QMainWindow):
             self.bottom_bar.log_message("下载正在进行中")
             return
         if self._pending_media:
-            save_dir = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
             import threading
-            threading.Thread(target=self._downloader.start, args=(self._pending_media, save_dir), daemon=True).start()
+            threading.Thread(target=self._downloader.start, args=(self._pending_media, save_dir(self._config)), daemon=True).start()
         else:
             self.bottom_bar.log_message("没有待下载的媒体文件，请先双击详情页分析")
 
@@ -459,7 +445,7 @@ class MainWindow(QMainWindow):
         self._auto_collecting = True
         self._auto_all_details = []  # Collect all detail URLs in phase 1
         self._auto_detail_idx = 0
-        self._auto_save_base = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
+        self._auto_save_base = save_dir(self._config)
         self.data_panel.clear_details()
         self.bottom_bar.log_message(f"阶段1/2: 遍历 {len(pages)} 个分页收集详情...")
         self._auto_page_collect()
@@ -484,10 +470,7 @@ class MainWindow(QMainWindow):
         self.browser_panel.navigate(url)
 
     def _auto_on_collect_loaded(self, ok):
-        try:
-            self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_collect_loaded)
-        except TypeError:
-            pass
+        self._disconnect_load(self._auto_on_collect_loaded)
         if getattr(self, '_auto_stopped', False): return
         if getattr(self, '_auto_paused', False): return self._auto_retry(lambda: self._auto_on_collect_loaded(False))
         if not ok:
@@ -502,12 +485,7 @@ class MainWindow(QMainWindow):
         if not getattr(self, '_current_rule', None):
             self._auto_page_idx += 1
             return self._auto_retry(self._auto_page_collect)
-        from app.models import SelectorRule, SiteRule
-        r = self._current_rule
-        rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern",""),
-                        page_list=SelectorRule(css=r["page_list"]["css"], attribute=r["page_list"]["attribute"],
-                                              url_pattern=r["page_list"].get("url_pattern","")),
-                        detail_images=SelectorRule(css=r["detail_images"]["css"], attribute=r["detail_images"]["attribute"]))
+        rule = SiteRule.from_config(self._current_rule)
         self._crawler.extract_detail_links(rule)
 
     def _on_detail_links_found(self, links):
@@ -539,10 +517,7 @@ class MainWindow(QMainWindow):
         self.browser_panel.navigate(url)
 
     def _auto_on_dl_loaded(self, ok):
-        try:
-            self.browser_panel.webview.page().loadFinished.disconnect(self._auto_on_dl_loaded)
-        except TypeError:
-            pass
+        self._disconnect_load(self._auto_on_dl_loaded)
         if getattr(self, '_auto_stopped', False): return
         if getattr(self, '_auto_paused', False): return self._auto_retry(lambda: self._auto_on_dl_loaded(False))
         if not ok:
@@ -553,7 +528,7 @@ class MainWindow(QMainWindow):
     def _auto_on_got_title(self, title):
         if getattr(self, '_auto_stopped', False): return
         if getattr(self, '_auto_paused', False): return self._auto_retry(lambda: self._auto_on_got_title(title))
-        self._auto_cur_title = (title or "untitled").strip().replace('/','_').replace('\\','_')[:80]
+        self._auto_cur_title = safe_title(title)
         self.bottom_bar.log_message(f"标题: {self._auto_cur_title}")
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(1500, self._auto_extract_media)

@@ -9,6 +9,18 @@ class SelectorRule:
     wait_selector: str = ""
     lazy_scroll: bool = False
 
+    @staticmethod
+    def from_dict(d: dict) -> Optional['SelectorRule']:
+        if not d:
+            return None
+        return SelectorRule(
+            css=d.get("css", ""),
+            attribute=d.get("attribute", "href"),
+            url_pattern=d.get("url_pattern", ""),
+            wait_selector=d.get("wait_selector", ""),
+            lazy_scroll=d.get("lazy_scroll", False),
+        )
+
 @dataclass
 class AntiCrawlConfig:
     delay_range: tuple = (1, 3)
@@ -26,6 +38,20 @@ class SiteRule:
     detail_videos: Optional[SelectorRule] = None
     next_button: Optional[SelectorRule] = None
     anti_crawl: AntiCrawlConfig = field(default_factory=AntiCrawlConfig)
+
+    @staticmethod
+    def from_config(cfg: dict) -> Optional['SiteRule']:
+        if not cfg:
+            return None
+        return SiteRule(
+            name=cfg["name"],
+            url_pattern=cfg.get("url_pattern", ""),
+            page_list=SelectorRule.from_dict(cfg.get("page_list")),
+            detail_images=SelectorRule.from_dict(cfg.get("detail_images")),
+            pagination=SelectorRule.from_dict(cfg.get("pagination")),
+            detail_videos=SelectorRule.from_dict(cfg.get("detail_videos")),
+            next_button=SelectorRule.from_dict(cfg.get("next_button")),
+        )
 
 @dataclass
 class CrawlResult:
