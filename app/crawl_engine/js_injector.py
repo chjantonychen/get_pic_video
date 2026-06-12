@@ -50,7 +50,7 @@ class JSInjector:
       var n = parseInt(text, 10);
       if (!isNaN(n) && n > maxPage) maxPage = n;
       var href = el.getAttribute('href') || el.href || '';
-      if (href && !urlTemplate && n > 0) urlTemplate = href.replace(n.toString(), '{page}');
+      if (href && !urlTemplate && n > 0) urlTemplate = href.replace(n.toString(), '{{page}}');
     }});
     Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {{
       try {{ if (f.contentDocument) search(f.contentDocument); }} catch(e) {{}}
