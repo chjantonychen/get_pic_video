@@ -69,11 +69,17 @@ DISABLE_PICKER_JS = """
 """
 
 VALIDATE_JS = """
-(function(doc, css) {
-  doc.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
-  var els = doc.querySelectorAll(css);
-  els.forEach(function(el) { el.style.outline = "3px solid #4CAF50"; el.style.outlineOffset = "2px"; });
-  return els.length;
+(function(win, css) {
+  function count(d) {
+    d.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
+    var n = d.querySelectorAll(css).length;
+    d.querySelectorAll(css).forEach(function(el) { el.style.outline = "3px solid #4CAF50"; el.style.outlineOffset = "2px"; });
+    Array.from(d.querySelectorAll("iframe")).forEach(function(f) {
+      try { if (f.contentDocument) n += count(f.contentDocument); } catch(e) {}
+    });
+    return n;
+  }
+  return count(win.document);
 })
 """
 
@@ -108,7 +114,17 @@ class SelectorPicker(QObject):
 
     def validate_selector(self, css: str, callback):
         safe_css = json.dumps(css)
-        self._page.runJavaScript(f"({VALIDATE_JS})(document, {safe_css})", callback)
+        self._page.runJavaScript(f"({VALIDATE_JS})(window, {safe_css})", callback)
 
     def clear_highlights(self):
-        self._page.runJavaScript("""document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });""")
+        self._page.runJavaScript("""
+(function() {
+  function clear(doc) {
+    doc.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
+    Array.from(doc.querySelectorAll("iframe")).forEach(function(f) {
+      try { if (f.contentDocument) clear(f.contentDocument); } catch(e) {}
+    });
+  }
+  clear(document);
+})();
+""")
