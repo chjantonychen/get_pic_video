@@ -122,7 +122,12 @@ class MainWindow(QMainWindow):
         for label, picks in self._picked_selectors.items():
             field = type_map.get(label)
             if field and picks:
-                kwargs[field] = SelectorRule(css=picks[0]["css"], attribute=picks[0]["attribute"])
+                p = picks[0]
+                kwargs[field] = SelectorRule(
+                    css=p.get("css", ""),
+                    attribute=p.get("attribute", "href"),
+                    url_pattern=p.get("url_pattern", ""),
+                )
         if "page_list" not in kwargs or "detail_images" not in kwargs:
             self.bottom_bar.log_message("规则不完整: 至少需要标注「详情链接」和「图片容器」")
             return
@@ -142,20 +147,23 @@ class MainWindow(QMainWindow):
         try:
             data = json.loads(data_json)
             selector = data.get("selector", "")
-            attrs = data.get("attrs", [])  # [{"name": "src", "value": "http://..."}, ...]
+            attrs = data.get("attrs", [])
         except:
             selector = data_json
             attrs = []
         dlg = TypeSelectorDialog(selector, attrs, self)
         if dlg.exec_() and dlg.selected_type:
             t = dlg.selected_type
-            attr = dlg.selected_attribute or "src"
-            self.bottom_bar.log_message(f"已标注 [{t}]: {selector} (attr={attr})")
+            attr = dlg.selected_attribute or "href"
+            entry = {"css": selector, "attribute": attr}
+            if dlg.use_url_pattern and dlg.url_pattern:
+                entry["url_pattern"] = dlg.url_pattern
+            self.bottom_bar.log_message(f"已标注 [{t}]: {selector[:60]}... (模式={'URL' if dlg.use_url_pattern else 'CSS'})")
             if t not in self._picked_selectors:
                 self._picked_selectors[t] = []
-            self._picked_selectors[t].append({"css": selector, "attribute": attr})
+            self._picked_selectors[t].append(entry)
             self._selector_picker.validate_selector(selector,
-                lambda count: self.bottom_bar.log_message(f"选择器匹配到 {count} 个元素"))
+                lambda count: self.bottom_bar.log_message(f"匹配到 {count} 个元素"))
         else:
             self.bottom_bar.log_message("元素标注取消")
 
@@ -188,7 +196,8 @@ class MainWindow(QMainWindow):
         self.bottom_bar.log_message("开始分析页面...")
         from app.models import SelectorRule, SiteRule
         def sr(d):
-            return SelectorRule(css=d["css"], attribute=d["attribute"]) if d else None
+            return SelectorRule(css=d.get("css", ""), attribute=d.get("attribute", "href"),
+                                url_pattern=d.get("url_pattern", "")) if d else None
         r = self._current_rule
         rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern", ""),
                         page_list=sr(r["page_list"]), detail_images=sr(r["detail_images"]),

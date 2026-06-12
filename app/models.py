@@ -3,8 +3,9 @@ from typing import Optional
 
 @dataclass
 class SelectorRule:
-    css: str
-    attribute: str
+    css: str = ""
+    attribute: str = "href"
+    url_pattern: str = ""
     wait_selector: str = ""
     lazy_scroll: bool = False
 

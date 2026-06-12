@@ -15,5 +15,26 @@ class JSInjector:
     def build_extract_links_js(self, selector: str, attribute: str) -> str:
         return f"{self._scripts['extract_links']}\nextractLinks({json.dumps(selector)}, {json.dumps(attribute)});"
 
+    def build_extract_links_by_pattern_js(self, url_pattern: str) -> str:
+        if not url_pattern:
+            return "[]"
+        return f"""
+(function() {{
+  var all = [];
+  var re = new RegExp({json.dumps(url_pattern)});
+  function search(doc) {{
+    Array.from(doc.querySelectorAll('a[href]')).forEach(function(el) {{
+      var href = el.href;
+      if (re.test(href)) all.push({{url: href, text: (el.textContent||'').trim().slice(0,100)}});
+    }});
+    Array.from(doc.querySelectorAll('iframe')).forEach(function(f) {{
+      try {{ if (f.contentDocument) search(f.contentDocument); }} catch(e) {{}}
+    }});
+  }}
+  search(document);
+  return all;
+}})();
+"""
+
     def build_extract_media_js(self, css: str, attr: str) -> str:
         return f"{self._scripts['extract_media']}\nextractMedia({json.dumps(css)}, {json.dumps(attr)});"
