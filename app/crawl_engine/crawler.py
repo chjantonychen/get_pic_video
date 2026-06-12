@@ -28,10 +28,7 @@ class Crawler(QObject):
         if not rule.pagination:
             return
         sr = rule.pagination
-        if sr.url_pattern:
-            js = self._js.build_extract_links_by_pattern_js(sr.url_pattern)
-        else:
-            js = self._js.build_extract_links_js(sr.css, sr.attribute)
+        js = self._js.build_extract_all_pages_js(sr.css)
         self._page.runJavaScript(js, self.paginationFound.emit)
 
     def extract_media(self, rule: SiteRule, media_type: str = "image"):
