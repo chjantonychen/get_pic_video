@@ -24,7 +24,7 @@ class BottomBar(QWidget):
         self.pending_label.setMinimumWidth(70)
 
         # Auto-download group box
-        auto_group = QGroupBox("自动")
+        auto_group = QGroupBox("自动下载图片")
         auto_layout = QHBoxLayout(auto_group)
         auto_layout.setContentsMargins(3, 0, 3, 0)
         self.btn_auto = QPushButton("自动下载")
@@ -35,7 +35,7 @@ class BottomBar(QWidget):
         auto_layout.addWidget(self.btn_auto_stop)
 
         # Manual download group box
-        manual_group = QGroupBox("手动")
+        manual_group = QGroupBox("手动下载图片")
         manual_layout = QHBoxLayout(manual_group)
         manual_layout.setContentsMargins(3, 0, 3, 0)
         self.btn_download = QPushButton("开始下载")
