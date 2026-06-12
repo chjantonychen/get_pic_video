@@ -20,40 +20,58 @@ function getivGetSelector(el) {
 """
 
 ENABLE_PICKER_JS = """
-window.__lastPicked = null;
-window.__onHover = function(e) {
-  if (window.__lastEl) { window.__lastEl.style.outline = ""; window.__lastEl.style.background = ""; }
-  e.target.style.outline = "3px solid #2196F3";
-  e.target.style.outlineOffset = "2px";
-  e.target.style.background = "rgba(33,150,243,0.15)";
-  window.__lastEl = e.target;
-};
-window.__onOut = function(e) { e.target.style.outline = ""; e.target.style.background = ""; };
-window.__onPick = function(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  document.title = "__pick:" + encodeURIComponent(getivGetSelector(e.target));
-};
-document.addEventListener("mouseover", window.__onHover, true);
-document.addEventListener("mouseout", window.__onOut, true);
-document.addEventListener("click", window.__onPick, true);
-window.__getivPickerActive = true;
+(function() {
+  function inject(doc) {
+    if (!doc || doc.__getivActive) return;
+    doc.__getivActive = true;
+    doc.__lastEl = null;
+    doc.__onHover = function(e) {
+      if (doc.__lastEl) { doc.__lastEl.style.outline = ""; doc.__lastEl.style.background = ""; }
+      e.target.style.outline = "3px solid #2196F3";
+      e.target.style.outlineOffset = "2px";
+      e.target.style.background = "rgba(33,150,243,0.15)";
+      doc.__lastEl = e.target;
+    };
+    doc.__onOut = function(e) { e.target.style.outline = ""; e.target.style.background = ""; };
+    doc.__onPick = function(e) {
+      e.preventDefault(); e.stopPropagation();
+      document.title = "__pick:" + encodeURIComponent(getivGetSelector(e.target));
+    };
+    doc.addEventListener("mouseover", doc.__onHover, true);
+    doc.addEventListener("mouseout", doc.__onOut, true);
+    doc.addEventListener("click", doc.__onPick, true);
+    Array.from(doc.querySelectorAll("iframe")).forEach(function(f) {
+      try { if (f.contentDocument) inject(f.contentDocument); } catch(e) {}
+    });
+  }
+  inject(document);
+  // Retry for dynamically loaded iframe content
+  var retries = [2, 4, 8];
+  retries.forEach(function(s) { setTimeout(function() { inject(document); }, s * 1000); });
+})();
 """
 
 DISABLE_PICKER_JS = """
-if (window.__getivPickerActive) {
-  document.removeEventListener("mouseover", window.__onHover, true);
-  document.removeEventListener("mouseout", window.__onOut, true);
-  document.removeEventListener("click", window.__onPick, true);
-  document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
-  window.__getivPickerActive = false;
-}
+(function() {
+  function disable(doc) {
+    if (!doc.__getivActive) return;
+    doc.__getivActive = false;
+    doc.removeEventListener("mouseover", doc.__onHover, true);
+    doc.removeEventListener("mouseout", doc.__onOut, true);
+    doc.removeEventListener("click", doc.__onPick, true);
+    doc.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
+    Array.from(doc.querySelectorAll("iframe")).forEach(function(f) {
+      try { if (f.contentDocument) disable(f.contentDocument); } catch(e) {}
+    });
+  }
+  disable(document);
+})();
 """
 
 VALIDATE_JS = """
-(function(css) {
-  document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
-  var els = document.querySelectorAll(css);
+(function(doc, css) {
+  doc.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });
+  var els = doc.querySelectorAll(css);
   els.forEach(function(el) { el.style.outline = "3px solid #4CAF50"; el.style.outlineOffset = "2px"; });
   return els.length;
 })
@@ -67,6 +85,12 @@ class SelectorPicker(QObject):
         self._page = page
         self._enabled = False
         page.titleChanged.connect(self._on_title_changed)
+        page.loadFinished.connect(self._on_page_loaded)
+
+    def _on_page_loaded(self, ok):
+        if self._enabled:
+            self._page.runJavaScript(GET_SELECTOR_JS)
+            self._page.runJavaScript(ENABLE_PICKER_JS)
 
     def enable(self):
         self._enabled = True
@@ -77,11 +101,6 @@ class SelectorPicker(QObject):
         self._enabled = False
         self._page.runJavaScript(DISABLE_PICKER_JS)
 
-    def reenable(self):
-        if self._enabled:
-            self._page.runJavaScript(GET_SELECTOR_JS)
-            self._page.runJavaScript(ENABLE_PICKER_JS)
-
     def _on_title_changed(self, title):
         if title.startswith("__pick:"):
             selector = urllib.parse.unquote(title[7:])
@@ -89,7 +108,7 @@ class SelectorPicker(QObject):
 
     def validate_selector(self, css: str, callback):
         safe_css = json.dumps(css)
-        self._page.runJavaScript(f"({VALIDATE_JS})({safe_css})", callback)
+        self._page.runJavaScript(f"({VALIDATE_JS})(document, {safe_css})", callback)
 
     def clear_highlights(self):
         self._page.runJavaScript("""document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; el.style.background = ""; });""")
