@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QHBoxLayout
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings, QWebEngineProfile
 from PyQt5.QtCore import QUrl
 
 class BrowserPanel(QWidget):
@@ -19,7 +19,22 @@ class BrowserPanel(QWidget):
         nav.addStretch()
         nav.addWidget(self.btn_pick)
         layout.addLayout(nav)
+        profile = QWebEngineProfile.defaultProfile()
+        profile.setHttpUserAgent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
         self.webview = QWebEngineView()
+        s = self.webview.settings()
+        s.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        s.setAttribute(QWebEngineSettings.JavascriptCanOpenWindows, True)
+        s.setAttribute(QWebEngineSettings.LocalStorageEnabled, True)
+        s.setAttribute(QWebEngineSettings.PluginsEnabled, True)
+        s.setAttribute(QWebEngineSettings.AutoLoadImages, True)
+        s.setAttribute(QWebEngineSettings.ErrorPageEnabled, False)
+        s.setAttribute(QWebEngineSettings.FullScreenSupportEnabled, True)
+        s.setAttribute(QWebEngineSettings.WebGLEnabled, True)
+        s.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
         self.webview.setUrl(QUrl("about:blank"))
         layout.addWidget(self.webview)
         self.btn_back.clicked.connect(self.webview.back)
