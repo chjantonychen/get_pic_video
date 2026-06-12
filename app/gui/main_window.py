@@ -319,6 +319,17 @@ class MainWindow(QMainWindow):
             from urllib.parse import urlparse
             domain = urlparse(samples[0]).netloc or "unknown"
             import re
+
+    def _resolve_url(self, url: str) -> str:
+        if url.startswith(("http://", "https://")):
+            return url
+        if url.startswith("//"):
+            return "https:" + url
+        if url.startswith("/"):
+            page = self.browser_panel.webview.url().toString()
+            parsed = urllib.parse.urlparse(page)
+            return f"{parsed.scheme}://{parsed.netloc}{url}"
+        return url
             # Generate URL pattern from sample
             sample = samples[0]
             pattern = re.sub(r"/\d+", r"/\\d+", sample)
@@ -355,7 +366,7 @@ class MainWindow(QMainWindow):
 
     def _on_pagination_found(self, links):
         for link in links:
-            url = link.get("url") or ""
+            url = self._resolve_url(link.get("url") or "")
             text = link.get("text") or url
             if url:
                 self.data_panel.add_page_item(text, url)
@@ -363,7 +374,7 @@ class MainWindow(QMainWindow):
 
     def _on_detail_links_found(self, links):
         for link in links:
-            url = link.get("url") or ""
+            url = self._resolve_url(link.get("url") or "")
             text = link.get("text") or url
             if url:
                 self.data_panel.add_detail_item(text, url)

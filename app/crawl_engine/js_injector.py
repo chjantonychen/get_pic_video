@@ -44,6 +44,7 @@ class JSInjector:
 (function() {{
   var result = [];
   var maxPage = 0, urlTemplate = '';
+  var base = window.location.origin;
   function search(doc) {{
     Array.from(doc.querySelectorAll({json.dumps(selector)})).forEach(function(el) {{
       var text = (el.textContent || '').trim();
@@ -60,6 +61,7 @@ class JSInjector:
   if (maxPage > 0 && urlTemplate) {{
     for (var i = 1; i <= maxPage; i++) {{
       var u = urlTemplate.replace('{{page}}', i.toString());
+      if (u.startsWith('/')) u = base + u;
       result.push({{url: u, text: '\\u7b2c' + i + '\\u9875 - ' + u}});
     }}
   }}
