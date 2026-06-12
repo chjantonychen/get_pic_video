@@ -47,8 +47,9 @@ class BottomBar(QWidget):
 
         row1.addWidget(self.progress)
         row1.addWidget(self.pending_label)
-        row1.addWidget(auto_group)
         row1.addStretch()
+        row1.addWidget(auto_group)
+        row1.addSpacing(10)
         row1.addWidget(manual_group)
 
         # Row 2: log (full width)
