@@ -315,7 +315,7 @@ class MainWindow(QMainWindow):
   function add(u, t) { if (u && u.trim()) all.push({url: u.trim(), type: t}); }
   // Search entire page for m3u8 URLs
   try {
-    var re = /https?:\\/\\/[^\\s'\"<>]+\\.m3u8[^\\s'\"<>]*/g;
+    var re = /https?:\\/\\/[^\\s'\"<>\\\\]+\\.m3u8/g;
     var text = document.documentElement.outerHTML;
     var m;
     while ((m = re.exec(text)) !== null) {
@@ -337,7 +337,7 @@ class MainWindow(QMainWindow):
             js += f"Array.from(f.contentDocument.querySelectorAll({json.dumps(dv['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(dv['attribute'])})||el.src||'';if(u)all.push({{url:u,type:'video'}});}});"
         js += """
       // Search iframe content for m3u8
-      var re = /https?:\\/\\/[^\\s'\"<>]+\\.m3u8[^\\s'\"<>]*/g;
+      var re = /https?:\\/\\/[^\\s'\"<>\\\\]+\\.m3u8/g;
       var text = f.contentDocument.documentElement.outerHTML;
       var m;
       while ((m = re.exec(text)) !== null) {
