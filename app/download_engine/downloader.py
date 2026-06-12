@@ -63,6 +63,8 @@ class Downloader(QObject):
         self._http_download(url, path)
 
     def _http_download(self, url: str, path: str):
+        if self._cancel_event.is_set():
+            return
         os.makedirs(os.path.dirname(path), exist_ok=True)
         delay = self._config.get("delay_min", 1)
         delay_max = self._config.get("delay_max", 3)
@@ -108,3 +110,5 @@ class Downloader(QObject):
 
     def cancel(self):
         self._cancel_event.set()
+        if self._pool:
+            self._pool.shutdown(wait=False)
