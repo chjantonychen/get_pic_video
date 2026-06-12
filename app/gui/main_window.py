@@ -56,6 +56,8 @@ class MainWindow(QMainWindow):
         self.bottom_bar.autoDownloadRequested.connect(self._start_auto_download)
         self.bottom_bar.autoPauseRequested.connect(self._toggle_auto_pause)
         self.bottom_bar.autoStopRequested.connect(self._stop_auto_download)
+        self.bottom_bar.pauseRequested.connect(self._downloader.pause)
+        self.bottom_bar.cancelRequested.connect(self._downloader.cancel)
         self.browser_panel.webview.page().titleChanged.connect(self._on_page_title_changed)
         self.data_panel.clearPagesRequested.connect(self.data_panel.clear_pages)
         self.data_panel.clearDetailsRequested.connect(self.data_panel.clear_details)
