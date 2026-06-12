@@ -282,19 +282,29 @@ class MainWindow(QMainWindow):
         except TypeError:
             pass
         if not ok or not self._current_rule:
+            self.bottom_bar.log_message("提取跳过: 页面加载失败或无规则")
             return
         self.bottom_bar.log_message("提取媒体文件...")
+        r = self._current_rule
+        di = r.get("detail_images")
+        dv = r.get("detail_videos")
+        self.bottom_bar.log_message(f"规则: 图片CSS={di.get('css','无') if di else '无'}, 视频CSS={dv.get('css','无') if dv else '无'}")
         self._media_extract_attempt = 0
         self._media_extract()
 
     def _media_extract(self):
-        if not self._current_rule or self._media_extract_attempt >= 4:
+        if not self._current_rule:
+            self.bottom_bar.log_message("提取中止: 无规则")
+            return
+        if self._media_extract_attempt >= 4:
+            self.bottom_bar.log_message("提取结束: 已达最大尝试次数")
             return
         self._media_extract_attempt += 1
         from PyQt5.QtCore import QTimer
         r = self._current_rule
         di = r.get("detail_images")
         dv = r.get("detail_videos")
+        self.bottom_bar.log_message(f"媒体提取 #{self._media_extract_attempt}: di={bool(di)} dv={bool(dv)}")
         js = """
 (function() {
   function searchDoc(d) {
@@ -303,18 +313,26 @@ class MainWindow(QMainWindow):
       var u = el.getAttribute('src') || el.getAttribute('data-src') || el.href || el.src || '';
       if (u) r.push({url: u, type: type});
     }
-    Array.from(d.querySelectorAll('img[src]')).forEach(function(el) { add(el, 'image'); });
-    Array.from(d.querySelectorAll('video[src]')).forEach(function(el) { add(el, 'video'); });
-    Array.from(d.querySelectorAll('source[src]')).forEach(function(el) { add(el, 'video'); });
+    try {
+      Array.from(d.querySelectorAll('img[src]')).forEach(function(el) { add(el, 'image'); });
+    } catch(e) {}
+    try {
+      Array.from(d.querySelectorAll('video[src]')).forEach(function(el) { add(el, 'video'); });
+    } catch(e) {}
+    try {
+      Array.from(d.querySelectorAll('source[src]')).forEach(function(el) { add(el, 'video'); });
+    } catch(e) {}
 """
         if di:
-            js += f"Array.from(d.querySelectorAll({json.dumps(di['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(di['attribute'])})||el.src||'';if(u)r.push({{url:u,type:'image'}});}});"
+            js += f"try{{Array.from(d.querySelectorAll({json.dumps(di['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(di['attribute'])})||el.src||'';if(u)r.push({{url:u,type:'image'}});}});}}catch(e){{}}"
         if dv:
-            js += f"Array.from(d.querySelectorAll({json.dumps(dv['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(dv['attribute'])})||el.src||'';if(u)r.push({{url:u,type:'video'}});}});"
+            js += f"try{{Array.from(d.querySelectorAll({json.dumps(dv['css'])})).forEach(function(el){{var u=el.getAttribute({json.dumps(dv['attribute'])})||el.src||'';if(u)r.push({{url:u,type:'video'}});}});}}catch(e){{}}"
         js += """
-    Array.from(d.querySelectorAll('iframe')).forEach(function(f) {
-      try { if (f.contentDocument) r = r.concat(searchDoc(f.contentDocument)); } catch(e) {}
-    });
+    try {
+      Array.from(d.querySelectorAll('iframe')).forEach(function(f) {
+        try { if (f.contentDocument) r = r.concat(searchDoc(f.contentDocument)); } catch(e) {}
+      });
+    } catch(e) {}
     return r;
   }
   var all = searchDoc(document);
@@ -322,6 +340,7 @@ class MainWindow(QMainWindow):
 })();
 """
         js = js.replace("MEDIA_ATTEMPT", str(self._media_extract_attempt))
+        self.bottom_bar.log_message("注入JS提取媒体...")
         self.browser_panel.webview.page().runJavaScript(js)
         QTimer.singleShot(3000, self._media_extract)
 
@@ -579,31 +598,40 @@ class MainWindow(QMainWindow):
         if title.startswith("__media:"):
             try:
                 data = json.loads(urllib.parse.unquote(title[8:]))
+                self.bottom_bar.log_message(f"收到__media: 数据={data.get('count','?') if isinstance(data,dict) else 'list'}")
                 if isinstance(data, dict):
                     count = data.get("count", 0)
                     all_items = data.get("all", [])
                     attempt = data.get("attempt", 0)
+                    self.bottom_bar.log_message(f"解析: items={len(all_items)}, attempt={attempt}")
                     if count > 0:
                         self._pending_media = all_items
                         self.bottom_bar.set_pending_count(len(self._pending_media))
                         self.bottom_bar.log_message(f"提取成功 (尝试#{attempt+1}): {count} 个媒体文件")
-                        for item in all_items[:3]:
-                            self.bottom_bar.log_message(f"  → {item.get('url','')[:80]}")
+                        types = {}
                         for item in all_items:
-                            self.data_panel.add_media_item(item.get("type", "image"), item.get("url",""))
+                            t = item.get("type", "image")
+                            types[t] = types.get(t, 0) + 1
+                            try:
+                                self.data_panel.add_media_item(t, item.get("url",""))
+                            except Exception as e2:
+                                self.bottom_bar.log_message(f"添加媒体失败: {e2}")
+                        self.bottom_bar.log_message(f"分类: {types}")
+                        for item in all_items[:3]:
+                            self.bottom_bar.log_message(f"  → [{item.get('type','')}] {item.get('url','')[:60]}")
                     else:
                         self.bottom_bar.log_message(f"提取尝试#{attempt+1}: 未找到元素")
                 elif isinstance(data, list):
                     self._pending_media.extend(data)
                     self.bottom_bar.set_pending_count(len(self._pending_media))
-            except:
-                pass
+            except Exception as e:
+                self.bottom_bar.log_message(f"__media解析错误: {e}")
         elif title.startswith("__auto:"):
             try:
                 data = json.loads(urllib.parse.unquote(title[7:]))
                 self._handle_auto_analyze(data)
-            except:
-                pass
+            except Exception as e:
+                self.bottom_bar.log_message(f"__auto解析错误: {e}")
         elif title.startswith("__autodl:"):
             try:
                 data = json.loads(urllib.parse.unquote(title[9:]))
