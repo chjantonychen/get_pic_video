@@ -474,8 +474,10 @@ class MainWindow(QMainWindow):
 
     def _toggle_auto_pause(self):
         self._auto_paused = not getattr(self, '_auto_paused', False)
-        self.bottom_bar.log_message("已暂停" if self._auto_paused else "已恢复")
-        if not self._auto_paused:
+        is_paused = self._auto_paused
+        self.bottom_bar.btn_auto_pause.setText("恢复自动" if is_paused else "暂停自动")
+        self.bottom_bar.log_message("已暂停" if is_paused else "已恢复")
+        if not is_paused:
             self._auto_retry(self._auto_page_collect if hasattr(self, '_auto_all_details') and self._auto_detail_idx == 0 else self._auto_download_next)
 
     def _stop_auto_download(self):
