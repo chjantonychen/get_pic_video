@@ -12,7 +12,6 @@ class BottomBar(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setFixedHeight(80)
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(5, 2, 5, 2)
         main_layout.setSpacing(2)
@@ -47,7 +46,7 @@ class BottomBar(QWidget):
         # Row 2: log (full width)
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setFixedHeight(40)
+        self.log.setFixedHeight(120)
 
         main_layout.addLayout(row1)
         main_layout.addWidget(self.log)
