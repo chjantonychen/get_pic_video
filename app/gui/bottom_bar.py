@@ -22,8 +22,8 @@ class BottomBar(QWidget):
         layout.addWidget(self.btn_pause)
         layout.addWidget(self.btn_cancel)
         layout.addWidget(self.log, 1)
-        self.btn_pause.clicked.connect(self.pauseRequested.emit)
-        self.btn_cancel.clicked.connect(self.cancelRequested.emit)
+        self.btn_pause.clicked.connect(lambda: self.pauseRequested.emit())
+        self.btn_cancel.clicked.connect(lambda: self.cancelRequested.emit())
 
     def log_message(self, msg: str):
         ts = time.strftime("%H:%M:%S")

@@ -1,4 +1,4 @@
-import os, subprocess, tempfile, requests
+import os, subprocess, tempfile, requests, shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class M3U8Handler:
@@ -12,12 +12,14 @@ class M3U8Handler:
         content = resp.text
         ts_urls = self._parse_ts_urls(content, base)
         tmpdir = tempfile.mkdtemp(prefix="getiv_")
-        ts_files = self._download_segments(ts_urls, tmpdir)
-        mp4_path = output_path
-        if not mp4_path.endswith(".mp4"):
-            mp4_path += ".mp4"
-        self._concat_to_mp4(ts_files, mp4_path)
-        self._cleanup(tmpdir)
+        try:
+            ts_files = self._download_segments(ts_urls, tmpdir)
+            mp4_path = output_path
+            if not mp4_path.endswith(".mp4"):
+                mp4_path += ".mp4"
+            self._concat_to_mp4(ts_files, mp4_path)
+        finally:
+            self._cleanup(tmpdir)
         return mp4_path
 
     def _parse_ts_urls(self, m3u8_content: str, base_url: str) -> list[str]:
@@ -58,5 +60,4 @@ class M3U8Handler:
         ], check=True, capture_output=True, timeout=300)
 
     def _cleanup(self, tmpdir: str):
-        import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)

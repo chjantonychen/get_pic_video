@@ -1,4 +1,3 @@
-import os
 from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction
 from PyQt5.QtCore import QUrl
 from app.gui.browser_panel import BrowserPanel
