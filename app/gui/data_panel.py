@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QListWidget, QListWidgetItem,
-    QComboBox, QSplitter)
+    QComboBox, QSplitter, QAbstractItemView, QLabel)
 from PyQt5.QtCore import pyqtSignal
 
 class DataPanel(QWidget):
@@ -27,14 +27,40 @@ class DataPanel(QWidget):
         rule_bar.addWidget(self.btn_new_rule)
         layout.addLayout(rule_bar)
         splitter = QSplitter()
+
+        # Page list (top) with toolbar
+        page_container = QWidget()
+        page_layout = QVBoxLayout(page_container)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_toolbar = QHBoxLayout()
+        page_toolbar.addWidget(QLabel("分页列表"))
+        self.btn_delete_pages = QPushButton("删除选中")
+        page_toolbar.addStretch()
+        page_toolbar.addWidget(self.btn_delete_pages)
+        page_layout.addLayout(page_toolbar)
         self.page_list = QListWidget()
+        self.page_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        page_layout.addWidget(self.page_list)
+        self.btn_delete_pages.clicked.connect(self._delete_selected_pages)
+
+        # Detail list (bottom)
+        detail_container = QWidget()
+        detail_layout = QVBoxLayout(detail_container)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
+        detail_layout.addWidget(QLabel("详情列表"))
         self.detail_list = QListWidget()
-        splitter.addWidget(self.page_list)
-        splitter.addWidget(self.detail_list)
+        detail_layout.addWidget(self.detail_list)
+
+        splitter.addWidget(page_container)
+        splitter.addWidget(detail_container)
         layout.addWidget(splitter)
         self.url_input.returnPressed.connect(lambda: self.urlSubmitted.emit(self.url_input.text()))
         self.page_list.itemDoubleClicked.connect(lambda item: self.pageDoubleClicked.emit(item.data(256)))
         self.detail_list.itemDoubleClicked.connect(lambda item: self.detailDoubleClicked.emit(item.data(256)))
+
+    def _delete_selected_pages(self):
+        for item in self.page_list.selectedItems():
+            self.page_list.takeItem(self.page_list.row(item))
 
     def add_page_item(self, text: str, url: str):
         item = QListWidgetItem(text)
