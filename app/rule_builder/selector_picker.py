@@ -18,8 +18,13 @@ PICKER_JS = """
     }
     return p.join(" > ");
   }
+  var style = document.createElement("style");
+  style.id = "getiv-picker-style";
+  style.textContent = "*:hover { outline: 3px solid #2196F3 !important; outline-offset: 2px !important; }";
+  document.head.appendChild(style);
   window.__disablePicker = function() {
-    document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; });
+    var s = document.getElementById("getiv-picker-style");
+    if (s) s.remove();
   };
   window.__validateSelector = function(css) {
     document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; });
@@ -27,18 +32,11 @@ PICKER_JS = """
     els.forEach(function(el) { el.style.outline = "3px solid #4CAF50"; el.style.outlineOffset = "2px"; });
     return els.length;
   };
-  var hov = function(e) { e.target.style.outline = "3px solid #2196F3"; e.target.style.outlineOffset = "2px"; };
-  var unhov = function(e) { e.target.style.outline = ""; };
-  var pick = function(e) {
+  document.addEventListener("click", function __pick(e) {
     e.preventDefault(); e.stopPropagation();
     document.title = "__pick:" + encodeURIComponent(getSelector(e.target));
-    document.removeEventListener("mouseover", hov, true);
-    document.removeEventListener("mouseout", unhov, true);
-    document.removeEventListener("click", pick, true);
-  };
-  document.addEventListener("mouseover", hov, true);
-  document.addEventListener("mouseout", unhov, true);
-  document.addEventListener("click", pick, true);
+    document.removeEventListener("click", __pick, true);
+  }, true);
 })();
 """
 
@@ -57,7 +55,6 @@ class SelectorPicker(QObject):
 
     def disable(self):
         self._enabled = False
-        self._page.runJavaScript("""document.querySelectorAll("[style*='outline']").forEach(function(el) { el.style.outline = ""; });""")
         self._page.runJavaScript("__disablePicker();")
 
     def reenable(self):
