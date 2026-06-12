@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction
+from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction, QApplication
 from PyQt5.QtCore import QUrl
 import json, urllib.parse, os
 from app.gui.browser_panel import BrowserPanel
@@ -318,7 +318,8 @@ class MainWindow(QMainWindow):
     def _start_download(self):
         if self._pending_media:
             save_dir = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
-            self._downloader.start(self._pending_media, save_dir)
+            import threading
+            threading.Thread(target=self._downloader.start, args=(self._pending_media, save_dir), daemon=True).start()
         else:
             self.bottom_bar.log_message("没有待下载的媒体文件，请先双击详情页分析")
 
@@ -569,7 +570,8 @@ class MainWindow(QMainWindow):
                 if urls and hasattr(self, '_auto_cur_title') and hasattr(self, '_auto_save_base'):
                     folder = os.path.join(self._auto_save_base, self._auto_cur_title)
                     self.bottom_bar.log_message(f"下载 {len(urls)} 个文件到 {self._auto_cur_title}")
-                    self._downloader.start([{"url": u, "type": "image"} for u in urls], folder)
+                    import threading
+                    threading.Thread(target=self._downloader.start, args=([{"url": u, "type": "image"} for u in urls], folder), daemon=True).start()
                 self._auto_detail_idx = idx + 1
                 self.bottom_bar.update_progress(self._auto_detail_idx, len(self._auto_all_details))
                 from PyQt5.QtCore import QTimer
