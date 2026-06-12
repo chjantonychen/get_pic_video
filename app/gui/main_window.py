@@ -36,7 +36,8 @@ class MainWindow(QMainWindow):
         self.bottom_bar = BottomBar()
         layout.addWidget(self.bottom_bar, 0)
         self._crawler = Crawler(self.browser_panel.page())
-        self._m3u8_handler = M3U8Handler(self._config.get("ffmpeg_path", "ffmpeg"))
+        self._m3u8_handler = M3U8Handler(self._config.get("ffmpeg_path", "ffmpeg"),
+                                         log_callback=lambda msg: self._threadsafe_log(msg))
         self._downloader = Downloader(self._config, m3u8_handler=self._m3u8_handler)
         self._selector_picker = SelectorPicker(self.browser_panel.page())
         self._pending_media = []
@@ -268,6 +269,10 @@ class MainWindow(QMainWindow):
             pass
         if ok and self._current_rule:
             self._run_crawl_detail()
+
+    def _threadsafe_log(self, msg):
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self.bottom_bar.log_message(msg))
 
     def _on_detail_double_clicked(self, url: str):
         self.bottom_bar.log_message(f"分析详情: {url}")
