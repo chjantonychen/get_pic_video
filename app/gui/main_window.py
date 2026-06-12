@@ -1,5 +1,6 @@
 from PyQt5.QtWidgets import QMainWindow, QSplitter, QVBoxLayout, QWidget, QAction
 from PyQt5.QtCore import QUrl
+import json, urllib.parse
 from app.gui.browser_panel import BrowserPanel
 from app.gui.data_panel import DataPanel
 from app.gui.bottom_bar import BottomBar
@@ -8,7 +9,7 @@ from app.crawl_engine.crawler import Crawler
 from app.download_engine.downloader import Downloader
 from app.download_engine.m3u8_handler import M3U8Handler
 from app.config import load_config, save_config
-from app.models import SiteRule, DownloadProgress
+from app.models import SiteRule, SelectorRule, DownloadProgress
 from app.rule_builder.selector_picker import SelectorPicker
 from app.rule_builder.type_selector_dialog import TypeSelectorDialog
 
@@ -38,8 +39,10 @@ class MainWindow(QMainWindow):
         self._m3u8_handler = M3U8Handler(self._config.get("ffmpeg_path", "ffmpeg"))
         self._downloader = Downloader(self._config, m3u8_handler=self._m3u8_handler)
         self._selector_picker = SelectorPicker(self.browser_panel.page())
+        self._pending_media = []
         self._load_rule_list()
         self.data_panel.urlSubmitted.connect(self._on_url_submitted)
+        self.data_panel.btn_analyze.clicked.connect(self._on_analyze)
         self.data_panel.pageDoubleClicked.connect(self._on_page_double_clicked)
         self.data_panel.detailDoubleClicked.connect(self._on_detail_double_clicked)
         self._crawler.linksFound.connect(self._on_links_found)
@@ -48,6 +51,8 @@ class MainWindow(QMainWindow):
         self._selector_picker.elementPicked.connect(self._on_element_picked)
         self.data_panel.btn_new_rule.clicked.connect(self._start_new_rule)
         self.browser_panel.btn_pick.clicked.connect(self._toggle_pick_mode)
+        self.bottom_bar.downloadRequested.connect(self._start_download)
+        self.browser_panel.webview.page().titleChanged.connect(self._on_page_title_changed)
         self.browser_panel.navigate("about:blank")
 
     def _build_menu(self):
@@ -149,16 +154,84 @@ class MainWindow(QMainWindow):
 
     def _on_url_submitted(self, url: str):
         self.data_panel.clear_pages()
+        self._pending_media = []
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"导航到: {url}")
 
+    def _on_analyze(self):
+        url = self.data_panel.url_input.text().strip()
+        if url:
+            self._on_url_submitted(url)
+            self.browser_panel.webview.page().loadFinished.connect(self._delayed_crawl)
+        elif self._current_rule:
+            self._run_crawl_now()
+
+    def _delayed_crawl(self, ok):
+        if ok and self._current_rule:
+            self._run_crawl_now()
+        # Disconnect after first fire to prevent stacking
+        try:
+            self.browser_panel.webview.page().loadFinished.disconnect(self._delayed_crawl)
+        except TypeError:
+            pass
+
+    def _run_crawl_now(self):
+        if not self._current_rule:
+            return
+        self.bottom_bar.log_message("开始分析页面...")
+        from app.models import SelectorRule, SiteRule
+        def sr(d):
+            return SelectorRule(css=d["css"], attribute=d["attribute"]) if d else None
+        r = self._current_rule
+        rule = SiteRule(name=r["name"], url_pattern=r.get("url_pattern", ""),
+                        page_list=sr(r["page_list"]), detail_images=sr(r["detail_images"]),
+                        pagination=sr(r.get("pagination")), detail_videos=sr(r.get("detail_videos")),
+                        next_button=sr(r.get("next_button")))
+        self._crawler.extract_detail_links(rule)
+
     def _on_page_double_clicked(self, url: str):
         self.data_panel.clear_details()
+        self._pending_media = []
         self.browser_panel.navigate(url)
         self.bottom_bar.log_message(f"打开分页: {url}")
 
     def _on_detail_double_clicked(self, url: str):
         self.bottom_bar.log_message(f"分析详情: {url}")
+        self.browser_panel.navigate(url)
+        if self._current_rule:
+            self.browser_panel.webview.page().loadFinished.connect(self._delayed_extract_media)
+
+    def _delayed_extract_media(self, ok):
+        try:
+            self.browser_panel.webview.page().loadFinished.disconnect(self._delayed_extract_media)
+        except TypeError:
+            pass
+        if not ok or not self._current_rule:
+            return
+        r = self._current_rule
+        di = r.get("detail_images")
+        dv = r.get("detail_videos")
+        js = "var all=[];"
+        if di:
+            js += f"""
+try {{ var els = document.querySelectorAll({json.dumps(di['css'])});
+els.forEach(function(el){{ all.push({{url:el.getAttribute({json.dumps(di['attribute'])})||el.src, type:'image'}}); }}); }} catch(e){{}}
+"""
+        if dv:
+            js += f"""
+try {{ var els = document.querySelectorAll({json.dumps(dv['css'])});
+els.forEach(function(el){{ all.push({{url:el.getAttribute({json.dumps(dv['attribute'])})||el.src, type:'video'}}); }}); }} catch(e){{}}
+"""
+        js += "document.title='__media:'+encodeURIComponent(JSON.stringify(all));"
+        self.browser_panel.webview.page().runJavaScript(js)
+
+    def _start_download(self):
+        if self._pending_media:
+            import os
+            save_dir = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
+            self._downloader.start(self._pending_media, save_dir)
+        else:
+            self.bottom_bar.log_message("没有待下载的媒体文件，请先双击详情页分析")
 
     def _on_links_found(self, links):
         for link in links:
@@ -166,7 +239,18 @@ class MainWindow(QMainWindow):
         self.bottom_bar.log_message(f"找到 {len(links)} 个链接")
 
     def _on_media_found(self, media):
-        self.bottom_bar.log_message(f"找到 {len(media)} 个媒体文件")
+        self._pending_media.extend(media)
+        self.bottom_bar.log_message(f"找到 {len(media)} 个媒体文件，累计 {len(self._pending_media)} 个")
+
+    def _on_page_title_changed(self, title):
+        if title.startswith("__media:"):
+            try:
+                data = json.loads(urllib.parse.unquote(title[8:]))
+                if isinstance(data, list):
+                    self._pending_media.extend(data)
+                    self.bottom_bar.log_message(f"解析到 {len(data)} 个媒体文件，累计 {len(self._pending_media)} 个")
+            except:
+                pass
 
     def _on_download_progress(self, prog: DownloadProgress):
         self.bottom_bar.update_progress(prog.completed, prog.total_files)
