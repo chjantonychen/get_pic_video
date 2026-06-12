@@ -1,6 +1,9 @@
 import json, urllib.parse
 from PyQt5.QtCore import QObject, pyqtSignal
 
+# Attribute candidates to auto-detect from elements
+ATTR_CANDIDATES = ["src", "href", "data-src", "data-original", "data-lazy", "data-srcset", "poster"]
+
 GET_SELECTOR_JS = """
 function getivGetSelector(el) {
   var p = [];
@@ -16,6 +19,15 @@ function getivGetSelector(el) {
     el = parent;
   }
   return p.join(" > ");
+}
+function getivElementAttrs(el) {
+  var candidates = ["src","href","data-src","data-original","data-lazy","data-srcset","poster"];
+  var found = [];
+  for (var i = 0; i < candidates.length; i++) {
+    var v = el.getAttribute(candidates[i]);
+    if (v) found.push(candidates[i]);
+  }
+  return found.join(",");
 }
 """
 
@@ -35,7 +47,9 @@ ENABLE_PICKER_JS = """
     doc.__onOut = function(e) { e.target.style.outline = ""; e.target.style.background = ""; };
     doc.__onPick = function(e) {
       e.preventDefault(); e.stopPropagation();
-      document.title = "__pick:" + encodeURIComponent(getivGetSelector(e.target));
+      var sel = getivGetSelector(e.target);
+      var attrs = getivElementAttrs(e.target);
+      document.title = "__pick:" + encodeURIComponent(sel + "|" + attrs);
     };
     doc.addEventListener("mouseover", doc.__onHover, true);
     doc.addEventListener("mouseout", doc.__onOut, true);
@@ -109,8 +123,11 @@ class SelectorPicker(QObject):
 
     def _on_title_changed(self, title):
         if title.startswith("__pick:"):
-            selector = urllib.parse.unquote(title[7:])
-            self.elementPicked.emit(selector)
+            raw = urllib.parse.unquote(title[7:])
+            parts = raw.split("|", 1)
+            selector = parts[0]
+            attrs = parts[1].split(",") if len(parts) > 1 and parts[1] else []
+            self.elementPicked.emit(json.dumps({"selector": selector, "attrs": attrs}))
 
     def validate_selector(self, css: str, callback):
         safe_css = json.dumps(css)

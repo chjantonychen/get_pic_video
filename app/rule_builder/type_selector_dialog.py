@@ -3,10 +3,8 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QPushButton, QLabel,
 
 ELEMENT_TYPES = ["分页链接", "详情链接", "图片容器", "视频容器", "下一页按钮"]
 
-ATTR_OPTIONS = ["src", "href", "data-src", "data-original", "data-lazy"]
-
 class TypeSelectorDialog(QDialog):
-    def __init__(self, selector: str, parent=None):
+    def __init__(self, selector: str, detected_attrs: list = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("选择元素类型")
         self.selected_type = None
@@ -23,7 +21,10 @@ class TypeSelectorDialog(QDialog):
                 rb.setChecked(True)
         layout.addWidget(QLabel("取属性:"))
         self.attr_combo = QComboBox()
-        self.attr_combo.addItems(ATTR_OPTIONS)
+        if detected_attrs:
+            self.attr_combo.addItems(detected_attrs)
+        else:
+            self.attr_combo.addItems(["src", "href", "data-src", "data-original", "data-lazy"])
         layout.addWidget(self.attr_combo)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_ok)

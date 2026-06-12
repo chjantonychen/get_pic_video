@@ -138,8 +138,15 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.bottom_bar.log_message(f"保存规则失败: {e}")
 
-    def _on_element_picked(self, selector: str):
-        dlg = TypeSelectorDialog(selector, self)
+    def _on_element_picked(self, data_json: str):
+        try:
+            data = json.loads(data_json)
+            selector = data.get("selector", "")
+            attrs = data.get("attrs", [])
+        except:
+            selector = data_json
+            attrs = []
+        dlg = TypeSelectorDialog(selector, attrs, self)
         if dlg.exec_() and dlg.selected_type:
             t = dlg.selected_type
             attr = dlg.selected_attribute or "src"
