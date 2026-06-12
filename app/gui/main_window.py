@@ -318,6 +318,13 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(delay, lambda: self._extract_media_retry(css, attr, attempt + 1))
 
     def _start_download(self):
+        if self._downloader.is_paused:
+            self._downloader.resume()
+            self.bottom_bar.log_message("下载已恢复")
+            return
+        if self._downloader.is_running:
+            self.bottom_bar.log_message("下载正在进行中")
+            return
         if self._pending_media:
             save_dir = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
             import threading

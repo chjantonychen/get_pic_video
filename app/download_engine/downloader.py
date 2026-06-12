@@ -17,10 +17,20 @@ class Downloader(QObject):
         self._pause_event = threading.Event()
         self._cancel_event = threading.Event()
         self._pause_event.set()
+        self._running = False
+
+    @property
+    def is_running(self):
+        return self._running
+
+    @property
+    def is_paused(self):
+        return not self._pause_event.is_set()
 
     def start(self, media_urls: list, save_dir: str):
         self._cancel_event.clear()
         self._pause_event.set()
+        self._running = True
         threads = self._config.get("download_threads", 10)
         self._pool = ThreadPoolExecutor(max_workers=threads)
         total = len(media_urls)
@@ -50,6 +60,7 @@ class Downloader(QObject):
                     total, completed, failed, "", 0, 0, 0))
             self.downloadComplete.emit()
         finally:
+            self._running = False
             if self._pool:
                 self._pool.shutdown(wait=False)
 
