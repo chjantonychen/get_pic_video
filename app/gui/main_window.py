@@ -199,6 +199,10 @@ class MainWindow(QMainWindow):
 
     def _auto_analyze_page(self):
         """自动分析页面结构，生成规则"""
+        self._auto_analyze_retries = 0
+        self._run_auto_analyze()
+
+    def _run_auto_analyze(self):
         js = """
 (function() {
   function searchLinks(doc) {
@@ -217,7 +221,6 @@ class MainWindow(QMainWindow):
     return {all: all, imgs: imgs};
   }
   var data = searchLinks(document);
-  // Group links by path pattern
   var groups = {};
   data.all.forEach(function(l) {
     var parts = l.href.split('/');
@@ -225,7 +228,6 @@ class MainWindow(QMainWindow):
     if (!groups[key]) groups[key] = [];
     groups[key].push(l.href);
   });
-  // Find the group with most numeric IDs (likely detail links)
   var best = {key: '', count: 0, samples: []};
   for (var k in groups) {
     if (groups[k].length > best.count) {
@@ -240,6 +242,11 @@ class MainWindow(QMainWindow):
 })();
 """
         self.browser_panel.webview.page().runJavaScript(js)
+        # Retry after 3s for dynamic iframe content
+        from PyQt5.QtCore import QTimer
+        self._auto_analyze_retries = getattr(self, '_auto_analyze_retries', 0) + 1
+        if self._auto_analyze_retries <= 2:
+            QTimer.singleShot(3000, self._run_auto_analyze)
 
     def _delayed_crawl(self, ok):
         if ok and self._current_rule:
@@ -314,6 +321,8 @@ var all = [];
             self.bottom_bar.log_message("没有待下载的媒体文件，请先双击详情页分析")
 
     def _handle_auto_analyze(self, data):
+        if self._current_rule:
+            return  # Already have a rule, don't create duplicate
         try:
             best = data.get("bestGroup", {})
             samples = best.get("samples", [])
