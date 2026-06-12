@@ -45,7 +45,7 @@ class MainWindow(QMainWindow):
         self.data_panel.btn_analyze.clicked.connect(self._on_analyze)
         self.data_panel.pageDoubleClicked.connect(self._on_page_double_clicked)
         self.data_panel.detailDoubleClicked.connect(self._on_detail_double_clicked)
-        self._crawler.linksFound.connect(self._on_links_found)
+        self._crawler.linksFound.connect(self._on_detail_links_found)
         self._crawler.mediaFound.connect(self._on_media_found)
         self._downloader.progressUpdated.connect(self._on_download_progress)
         self._selector_picker.elementPicked.connect(self._on_element_picked)
@@ -378,13 +378,13 @@ var all = [];
         except Exception as e:
             self.bottom_bar.log_message(f"自动分析失败: {e}")
 
-    def _on_links_found(self, links):
+    def _on_detail_links_found(self, links):
         for link in links:
             url = link.get("url") or ""
             text = link.get("text") or url
             if url:
-                self.data_panel.add_page_item(text, url)
-        self.bottom_bar.log_message(f"找到 {sum(1 for l in links if l.get('url'))} 个链接")
+                self.data_panel.add_detail_item(text, url)
+        self.bottom_bar.log_message(f"找到 {sum(1 for l in links if l.get('url'))} 个详情链接")
 
     def _on_media_found(self, media):
         self._pending_media.extend(media)
