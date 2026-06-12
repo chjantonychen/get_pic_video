@@ -289,9 +289,15 @@ class MainWindow(QMainWindow):
         di = r.get("detail_images")
         dv = r.get("detail_videos")
         self.bottom_bar.log_message(f"规则: 图片CSS={di.get('css','无') if di else '无'}, 视频CSS={dv.get('css','无') if dv else '无'}")
-        # Wait 3s for iframe dynamic content, then extract once
+        # Get page title
+        self.browser_panel.webview.page().runJavaScript("document.title", self._on_got_title_for_dl)
+
+    def _on_got_title_for_dl(self, title):
+        self._current_page_title = (title or "untitled").strip().replace('/','_').replace('\\','_')[:80]
+        self.bottom_bar.log_message(f"页面标题: {self._current_page_title}")
+        r = self._current_rule
         from PyQt5.QtCore import QTimer
-        QTimer.singleShot(3000, lambda: self._media_extract(di, dv))
+        QTimer.singleShot(3000, lambda: self._media_extract(r.get("detail_images"), r.get("detail_videos")))
 
     def _media_extract(self, di, dv):
         self.bottom_bar.log_message("提取媒体...")
@@ -342,8 +348,25 @@ class MainWindow(QMainWindow):
             data = j.loads(result) if isinstance(result, str) else result
             all_items = data.get("all", [])
             self.bottom_bar.log_message(f"JS返回: {len(all_items)} 个媒体文件")
+            m3u8_items = [item for item in all_items if '.m3u8' in item.get("url","").lower()]
+            if m3u8_items:
+                self.bottom_bar.log_message(f"发现 {len(m3u8_items)} 个M3U8视频，开始下载转换...")
+                title = getattr(self, '_current_page_title', f"video_{len(m3u8_items)}")
+                import os
+                save_dir = self._config.get("save_path") or os.path.join(os.getcwd(), "downloads")
+                folder = os.path.join(save_dir, title)
+                os.makedirs(folder, exist_ok=True)
+                for item in m3u8_items:
+                    url = item.get("url","")
+                    if url:
+                        self.bottom_bar.log_message(f"下载M3U8: {url[:60]}")
+                        try:
+                            mp4 = self._m3u8_handler.download_and_convert(url, os.path.join(folder, f"{title}.mp4"))
+                            self.bottom_bar.log_message(f"M3U8完成: {mp4}")
+                        except Exception as e:
+                            self.bottom_bar.log_message(f"M3U8失败: {e}")
             if all_items:
-                self._pending_media = all_items
+                self._pending_media = [item for item in all_items if '.m3u8' not in item.get("url","").lower()]
                 self.bottom_bar.set_pending_count(len(self._pending_media))
                 types = {}
                 for item in all_items:
