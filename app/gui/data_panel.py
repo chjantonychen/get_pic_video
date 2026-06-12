@@ -47,9 +47,16 @@ class DataPanel(QWidget):
         detail_container = QWidget()
         detail_layout = QVBoxLayout(detail_container)
         detail_layout.setContentsMargins(0, 0, 0, 0)
-        detail_layout.addWidget(QLabel("详情列表"))
+        detail_toolbar = QHBoxLayout()
+        detail_toolbar.addWidget(QLabel("详情列表"))
+        self.btn_delete_details = QPushButton("删除选中")
+        detail_toolbar.addStretch()
+        detail_toolbar.addWidget(self.btn_delete_details)
+        detail_layout.addLayout(detail_toolbar)
         self.detail_list = QListWidget()
+        self.detail_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         detail_layout.addWidget(self.detail_list)
+        self.btn_delete_details.clicked.connect(self._delete_selected_details)
 
         splitter.addWidget(page_container)
         splitter.addWidget(detail_container)
@@ -61,6 +68,10 @@ class DataPanel(QWidget):
     def _delete_selected_pages(self):
         for item in self.page_list.selectedItems():
             self.page_list.takeItem(self.page_list.row(item))
+
+    def _delete_selected_details(self):
+        for item in self.detail_list.selectedItems():
+            self.detail_list.takeItem(self.detail_list.row(item))
 
     def add_page_item(self, text: str, url: str):
         item = QListWidgetItem(text)
