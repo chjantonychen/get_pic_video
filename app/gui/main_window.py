@@ -46,6 +46,8 @@ class MainWindow(QMainWindow):
         self._selector_picker.bridge.elementPicked.connect(self._on_element_picked)
         self.data_panel.btn_new_rule.clicked.connect(self._start_new_rule)
         self.browser_panel.btn_pick.clicked.connect(self._toggle_pick_mode)
+        self.browser_panel.webview.page().loadFinished.connect(
+            lambda ok: self._selector_picker.reenable())
         self.browser_panel.navigate("about:blank")
 
     def _build_menu(self):
