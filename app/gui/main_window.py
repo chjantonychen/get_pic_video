@@ -295,6 +295,8 @@ class MainWindow(QMainWindow):
 
     def _on_detail_double_clicked(self, url: str):
         self.bottom_bar.log_message(f"分析详情: {url}")
+        self._pending_media = []
+        self.bottom_bar.set_pending_count(0)
         self.browser_panel.webview.page().loadFinished.connect(self._delayed_extract_media)
         self.browser_panel.navigate(url)
 
