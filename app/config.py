@@ -1,5 +1,13 @@
 import json, os
 
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.json")
+
+def default_ffmpeg_path():
+    bundled = os.path.join(os.path.dirname(__file__), "..", "bin", "ffmpeg.exe")
+    if os.path.exists(bundled):
+        return bundled
+    return "ffmpeg"
+
 DEFAULT_CONFIG = {
     "download_threads": 10,
     "save_path": "",
@@ -9,13 +17,11 @@ DEFAULT_CONFIG = {
     "delay_max": 3,
     "random_ua": True,
     "proxy_list": [],
-    "ffmpeg_path": "ffmpeg",
+    "ffmpeg_path": default_ffmpeg_path(),
     "page_timeout": 30,
     "js_retries": 3,
     "rules": []
 }
-
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.json")
 
 def load_config():
     if os.path.exists(CONFIG_PATH):
